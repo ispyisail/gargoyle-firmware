@@ -1,0 +1,147 @@
+name: Generate and sign OTA manifests
+
+# Phase 4: regenerates manifest-{stable,testing}.json (scripts/
+# make-manifest.sh) from the current releases + devices/ metadata, signs
+# them with the OTA usign key, commits the result under site/ota/, and
+# dispatches publish-site.yml so Pages serves them.
+#
+# Runs on the SELF-HOSTED runner, deliberately: the manifest must be signed
+# with the same private key that signs the images (RFC #62), and that key
+# exists only as a file on the build host -- never as a GitHub secret. That
+# also means usign itself comes from inside the gargoyle-builder container
+# (any built target carries it under <target>-src/staging_dir/host/bin/);
+# it does not exist on a bare runner host, verified live.
+#
+# Why commit-then-dispatch instead of deploying Pages here: Pages is
+# deployed as ONE artifact by publish-site.yml -- a second deploying
+# workflow would race it and each deploy replaces the whole site. Committing
+# the signed manifests into site/ gives them a reviewable git history and
+# lets the one existing deploy path publish them. The explicit
+# `gh workflow run` at the end is required because pushes made with the
+# workflow GITHUB_TOKEN do not trigger push-event workflows (GitHub
+# recursion prevention; workflow_dispatch via the API is the documented
+# exception).
+#
+# The `generated` timestamp inside the manifest changes every run, so the
+# commit decision compares `del(.generated)` -- an unchanged payload keeps
+# the previously committed manifest AND its signature byte-identical (no
+# churn commits, no re-signing).
+on:
+  release:
+    types: [published]
+  push:
+    branches: [main]
+    paths:
+      - "devices/**"
+      - "scripts/make-manifest.sh"
+      - "scripts/gather-github-assets.sh"
+  workflow_dispatch: {}
+
+concurrency:
+  group: sign-manifests
+  cancel-in-progress: false
+
+jobs:
+  sign-manifests:
+    runs-on: [self-hosted, gargoyle-builder]
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      # Always work on main: the release event checks out the tagged commit
+      # by default, but the manifest commit must land on the default branch.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Verify the signing key exists on this runner
+        run: |
+          key_dir="${GARGOYLE_OTA_KEY_DIR:?GARGOYLE_OTA_KEY_DIR not set on this runner}"
+          if [ ! -f "$key_dir/ota.sec" ]; then
+            echo "::error::$key_dir/ota.sec not found. Run scripts/generate-ota-key.sh once on this runner -- refusing to publish unsigned manifests." >&2
+            exit 1
+          fi
+
+      - name: Generate, sign, and verify both channel manifests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          key_dir="$GARGOYLE_OTA_KEY_DIR"
+
+          sh scripts/gather-github-assets.sh "${{ github.repository }}" > assets.json
+          echo "asset records: $(jq 'length' assets.json)"
+          mkdir -p site/ota
+
+          # usign only exists inside the builder container, as a build
+          # product of whichever targets have been built. Any copy will do.
+          usign_path=$(docker exec gargoyle-builder sh -c \
+            'find /build/gargoyle -maxdepth 6 -path "*/staging_dir/host/bin/usign" 2>/dev/null | head -1')
+          if [ -z "$usign_path" ]; then
+            echo "::error::no usign binary found in any target staging_dir inside the builder container -- build at least one target first" >&2
+            exit 1
+          fi
+
+          # Distinct container paths from build-release.yml (/tmp/ota-key)
+          # so a concurrently running build job cannot delete this key copy
+          # out from under us, or vice versa.
+          work=/tmp/ota-manifest-signing
+          docker exec gargoyle-builder mkdir -p "$work"
+          docker cp "$key_dir/ota.sec" "gargoyle-builder:$work/ota.sec"
+          docker cp "$key_dir/ota.pub" "gargoyle-builder:$work/ota.pub"
+          cleanup() { docker exec gargoyle-builder rm -rf "$work"; }
+          trap cleanup EXIT
+
+          for ch in stable testing; do
+            sh scripts/make-manifest.sh assets.json devices "$ch" > "new-manifest-$ch.json"
+            committed="site/ota/manifest-$ch.json"
+
+            if [ -f "$committed" ] && [ -f "$committed.sig" ] && \
+               [ "$(jq -S 'del(.generated)' "$committed")" = "$(jq -S 'del(.generated)' "new-manifest-$ch.json")" ]; then
+              echo "manifest-$ch: payload unchanged -- keeping the committed signed copy"
+            else
+              docker cp "new-manifest-$ch.json" "gargoyle-builder:$work/manifest-$ch.json"
+              docker exec gargoyle-builder "$usign_path" \
+                -S -m "$work/manifest-$ch.json" -s "$work/ota.sec" -x "$work/manifest-$ch.json.sig"
+              docker cp "gargoyle-builder:$work/manifest-$ch.json.sig" "$committed.sig"
+              mv "new-manifest-$ch.json" "$committed"
+              echo "manifest-$ch: regenerated and signed"
+            fi
+
+            # Verify EVERYTHING that will be served, changed or not, against
+            # the PUBLIC key -- the same check a router performs. Fails the
+            # job rather than ever publishing a manifest that will not verify.
+            docker cp "$committed" "gargoyle-builder:$work/verify-$ch.json"
+            docker cp "$committed.sig" "gargoyle-builder:$work/verify-$ch.json.sig"
+            docker exec gargoyle-builder "$usign_path" \
+              -V -m "$work/verify-$ch.json" -x "$work/verify-$ch.json.sig" -p "$work/ota.pub"
+            echo "manifest-$ch: signature verifies against ota.pub"
+          done
+
+          cleanup
+          trap - EXIT
+
+          # Convenience copy for humans (fingerprint cross-checks, manual
+          # verification). NOT a trust anchor: routers trust only the
+          # ota.pub baked into their image -- fetching the key from the
+          # same host as the manifest would make the signature meaningless.
+          cp "$key_dir/ota.pub" site/ota/ota.pub
+
+      - name: Commit the manifests and trigger the Pages deploy
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          git add site/ota
+          if git diff --cached --quiet; then
+            echo "manifests unchanged -- nothing to commit or deploy"
+            exit 0
+          fi
+          git config user.name "ispyisail"
+          git config user.email "shane@ringrose.co.nz"
+          git commit -m "Update signed OTA manifests"
+          git pull --rebase origin main
+          git push origin main
+          # GITHUB_TOKEN pushes do not fire push-event workflows; dispatch
+          # the Pages deploy explicitly so the new manifests actually ship.
+          gh workflow run publish-site.yml --repo "${{ github.repository }}" --ref main

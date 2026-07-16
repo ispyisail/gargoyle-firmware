@@ -57,13 +57,44 @@ RFC #62's (signed OTA upgrade) Rung-2 Firmware Finder.
   byte-for-byte against a real OpenWrt-generated `Packages` index, including
   its exact whitespace conventions).
 
+**Phase 3 — firmware builds:**
+
+- **`.github/workflows/build-release.yml`** — builds real firmware for one
+  or more targets on the self-hosted runner, signs every sysupgrade/factory
+  image with the OTA usign key (appended via `fwtool`, the same mechanism a
+  router verifies), uploads images + `.sha256` sidecars to a GitHub Release
+  (created as a draft and published only after every asset is in place, so
+  the `release: published` event never fires against an empty release), and
+  lets that event cascade into `publish-site.yml` and `sign-manifests.yml`.
+- **`scripts/generate-ota-key.sh`** — one-time keypair generation on the
+  build host. The private key never leaves that machine and is never stored
+  as a GitHub secret.
+- **`.github/workflows/runner-smoke-test.yml`** — cheap sanity check that
+  the self-hosted runner has the env vars, key, Docker access, and workspace
+  `build-release.yml` depends on.
+
+**Phase 4 — OTA manifests (RFC #62):**
+
+- **`scripts/make-manifest.sh`** — emits `manifest-{stable,testing}.json`:
+  one entry per `board_name`, pointing at the newest sysupgrade image that
+  channel offers, joined against `devices/*.json` for hardware floors and
+  EOL pinning. Fail-closed: boards with unmeasured floors, images without a
+  sha256 sidecar, or EOL boards without a `final_version` are skipped loudly
+  rather than guessed at.
+- **`.github/workflows/sign-manifests.yml`** — regenerates both manifests,
+  signs them with the OTA key on the self-hosted runner, verifies the
+  signatures against the public key before anything ships, commits the
+  result under `site/ota/`, and dispatches the Pages deploy. Routers fetch
+  `site/ota/manifest-<channel>.json` + `.sig` and verify against the
+  `ota.pub` baked into their image.
+
 ## Not yet in scope
 
-- **Firmware builds** (Phase 3) — `build-release.yml`, matrix builds,
-  self-hosted runner for heavy targets, image signing.
-- **OTA manifest generation** (Phase 4) — `scripts/make-manifest.sh`
-  producing RFC #62's signed `manifest-{stable,testing}.json` from this same
-  `devices/` data (floors, EOL, `history`, `upgradable_from`).
+- The **on-router OTA client** (`ota_upgrade.sh` + UI page) — RFC #62's
+  router-side half, which consumes the manifests published here. Lives in
+  the main gargoyle repo when it lands.
+- The Finder's **backup-tarball device identifier** (drag a config backup
+  onto the page to identify the board) — planned as the last Phase 4 piece.
 
 ## A portability note for anyone editing these scripts
 

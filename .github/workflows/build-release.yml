@@ -169,9 +169,18 @@ jobs:
           set -e
           extra_flag=""
           [ "$CHANNEL" = "testing" ] && extra_flag="--prerelease"
+          # Draft-first, publish-last: `gh release create` without --draft
+          # fires the `release: published` event IMMEDIATELY, before any
+          # asset upload -- publish-site.yml (and sign-manifests.yml) would
+          # index an empty release and nothing re-triggers them once the
+          # uploads land. Creating as a draft, uploading, and only then
+          # flipping draft off makes the published event fire with every
+          # asset already in place.
           gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1 || \
             gh release create "$RELEASE_TAG" --repo "${{ github.repository }}" \
               --title "$RELEASE_TAG" \
               --notes "Gargoyle firmware built from ispyisail/gargoyle@${GARGOYLE_REF} (channel: ${CHANNEL})" \
-              $extra_flag
+              --draft $extra_flag
           gh release upload "$RELEASE_TAG" release-assets/* --repo "${{ github.repository }}" --clobber
+          # No-op if the release is already published (re-runs, added targets).
+          gh release edit "$RELEASE_TAG" --repo "${{ github.repository }}" --draft=false
