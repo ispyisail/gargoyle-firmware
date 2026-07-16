@@ -267,3 +267,65 @@ footer {
 	border-top: 1px solid var(--border);
 	padding-top: 1rem;
 }
+
+/* --- backup-tarball identifier (RFC #62 Rung 2) --- */
+
+.identify { margin: 0 0 1.25rem; }
+
+.dropzone {
+	border: 1.5px dashed var(--border);
+	border-radius: 8px;
+	background: var(--surface);
+	color: var(--text-dim);
+	padding: 0.85rem 1rem;
+	font-size: 0.82rem;
+	line-height: 1.5;
+	cursor: default;
+}
+
+.dropzone strong { color: var(--text); margin-right: 0.35rem; }
+.dropzone code { font-family: var(--mono); font-size: 0.78rem; }
+.dropzone.drag { border-color: var(--accent); color: var(--text); }
+
+.filepick {
+	color: var(--accent);
+	cursor: pointer;
+	text-decoration: underline;
+}
+.filepick input[type="file"] { display: none; }
+
+.identify-result {
+	border: 1px solid var(--border);
+	border-top: none;
+	border-radius: 0 0 8px 8px;
+	background: var(--surface);
+	padding: 0.85rem 1rem;
+	font-size: 0.82rem;
+}
+
+.identify-result p { margin: 0.3rem 0; }
+.identify-paths { font-family: var(--mono); font-size: 0.74rem; color: var(--text-dim); overflow-wrap: anywhere; }
+.identify-era { color: var(--text-dim); }
+.identify-error { color: var(--eol-text); }
+
+.identify-candidates { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
+
+.candidate {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem 0.75rem;
+	align-items: baseline;
+	text-align: left;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--bg);
+	color: var(--text);
+	padding: 0.6rem 0.8rem;
+	font: inherit;
+	font-size: 0.82rem;
+	cursor: pointer;
+}
+.candidate:hover, .candidate:focus-visible { border-color: var(--accent); outline: none; }
+.candidate-name { font-weight: 600; }
+.candidate-score { color: var(--accent); font-size: 0.75rem; }
+.candidate-advice { flex-basis: 100%; color: var(--text-dim); font-size: 0.76rem; }

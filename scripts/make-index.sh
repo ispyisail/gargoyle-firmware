@@ -90,6 +90,8 @@ def parse_filename:
 			min_ram_kb: ($dev.min_ram_kb // null),
 			min_flash_kb: ($dev.min_flash_kb // null),
 			known_device: ($dev != null),
+			fingerprints: ($dev.fingerprints // null),
+			upgradable_from: ($dev.upgradable_from // null),
 			releases: [
 				($b._rows | group_by(.tag) | map({
 					version: (.[0].tag | ltrimstr("v")),

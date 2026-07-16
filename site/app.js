@@ -150,6 +150,100 @@
 		});
 	}
 
+	// --- backup-tarball identifier (RFC #62 Rung 2, logic in identify.js) ---
+
+	var ROUTING_TEXT = {
+		"direct": "Your firmware era can flash the current image directly through System → Update.",
+		"direct-legacy-name": "Your firmware era can flash the current image directly through System → Update (the image still carries this board’s legacy name for compatibility).",
+		"manual-factory": "Your firmware era needs the manual factory-image path — do not use a sysupgrade image; follow the device’s factory flashing instructions."
+	};
+
+	function renderIdentifyResult(res) {
+		var box = $("#identify-result");
+		box.innerHTML = "";
+		box.hidden = false;
+
+		if (!res.ok) {
+			box.appendChild(el("p", "identify-error", res.reason));
+			return;
+		}
+
+		var pathsLine = el("p", "identify-paths",
+			"Radios found in the backup: " + (res.radioCount || 0) +
+			(res.wifiPaths.length ? " (" + res.wifiPaths.join(", ") + ")" : ""));
+		box.appendChild(pathsLine);
+
+		if (res.era) {
+			box.appendChild(el("p", "identify-era",
+				"Firmware era: " + res.era.label + " — " + res.era.detail + "."));
+		}
+
+		if (res.candidates.length === 0) {
+			var none = el("p", "identify-error",
+				"No known device fingerprint matches these radio paths. Search manually above — and please open an issue on gargoyle-firmware quoting the paths shown, so this board can be fingerprinted.");
+			box.appendChild(none);
+			return;
+		}
+
+		var exact = res.candidates.filter(function (c) { return c.score === 1; });
+		var intro = exact.length === 1
+			? "Best match:"
+			: "Radio paths are shared within a hardware family — likely candidates (confirm against the label on your router):";
+		box.appendChild(el("p", null, intro));
+
+		var list = el("div", "identify-candidates");
+		res.candidates.forEach(function (c) {
+			var row = el("button", "candidate");
+			row.type = "button";
+			row.appendChild(el("span", "candidate-name", c.device.display_name));
+			row.appendChild(el("span", "candidate-score", Math.round(c.score * 100) + "% fingerprint match"));
+			var advice = GargoyleIdentify.routingAdvice(c.device, res.era);
+			if (advice && ROUTING_TEXT[advice]) {
+				row.appendChild(el("span", "candidate-advice", ROUTING_TEXT[advice]));
+			}
+			row.addEventListener("click", function () {
+				state.query = c.device.board_name;
+				$("#search").value = state.query;
+				render();
+			});
+			list.appendChild(row);
+		});
+		box.appendChild(list);
+	}
+
+	function handleBackupFile(file) {
+		var box = $("#identify-result");
+		box.hidden = false;
+		box.innerHTML = "";
+		box.appendChild(el("p", null, "Reading " + file.name + "…"));
+		GargoyleIdentify.analyze(file, state.data.entries)
+			.then(renderIdentifyResult)
+			.catch(function (err) {
+				box.innerHTML = "";
+				box.appendChild(el("p", "identify-error", "Could not read that file: " + err.message));
+			});
+	}
+
+	function wireIdentify() {
+		var dz = $("#dropzone");
+		["dragover", "dragenter"].forEach(function (ev) {
+			dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.add("drag"); });
+		});
+		["dragleave", "drop"].forEach(function (ev) {
+			dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.remove("drag"); });
+		});
+		dz.addEventListener("drop", function (e) {
+			if (e.dataTransfer.files && e.dataTransfer.files.length) {
+				handleBackupFile(e.dataTransfer.files[0]);
+			}
+		});
+		$("#backupfile").addEventListener("change", function (e) {
+			if (e.target.files && e.target.files.length) {
+				handleBackupFile(e.target.files[0]);
+			}
+		});
+	}
+
 	function wireControls() {
 		$("#search").addEventListener("input", function (e) {
 			state.query = e.target.value;
@@ -182,6 +276,7 @@
 					", " + releaseCount + " release" + (releaseCount === 1 ? "" : "s") +
 					" · index generated " + humanDate(data.generated);
 				wireControls();
+				wireIdentify();
 				render();
 			})
 			.catch(function (err) {

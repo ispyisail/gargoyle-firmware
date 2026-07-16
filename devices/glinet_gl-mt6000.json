@@ -1,7 +1,12 @@
 {
 	"board_name": "glinet_gl-mt6000",
 	"display_name": "GL.iNet GL-MT6000",
-	"aliases": ["mt6000", "gl-mt6000", "glinet mt6000", "flint 2"],
+	"aliases": [
+		"mt6000",
+		"gl-mt6000",
+		"glinet mt6000",
+		"flint 2"
+	],
 	"target": "mediatek/filogic",
 	"arch": "aarch64_cortex-a53",
 	"min_ram_kb": null,
@@ -14,5 +19,11 @@
 		">=1.13": "direct",
 		"1.10-1.12": "direct-legacy-name",
 		"<1.10": "manual-factory"
+	},
+	"fingerprints": {
+		"wifi_paths": [
+			"platform/soc/18000000.wifi",
+			"platform/soc/18000000.wifi+1"
+		]
 	}
 }

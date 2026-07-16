@@ -24,6 +24,17 @@
 	</div>
 	<p id="meta">Loading…</p>
 
+	<div id="identify" class="identify">
+		<div id="dropzone" class="dropzone" tabindex="0" role="button"
+			aria-label="Identify your router from a backup file">
+			<strong>Not sure which device you have?</strong>
+			Drop your Gargoyle backup file here (System&nbsp;&rarr;&nbsp;Backup&nbsp;&rarr;&nbsp;<code>backup.tar.gz</code>)
+			or <label class="filepick">choose a file<input id="backupfile" type="file" accept=".gz,.tgz,.tar,application/gzip"></label>.
+			It is read entirely in your browser &mdash; nothing is uploaded.
+		</div>
+		<div id="identify-result" class="identify-result" hidden></div>
+	</div>
+
 	<div id="results"></div>
 	<p id="empty">No devices match that search.</p>
 
@@ -35,6 +46,7 @@
 		<a href="https://github.com/ispyisail/gargoyle-firmware/tree/main/devices">devices/</a>.
 	</footer>
 </div>
+<script src="./identify.js"></script>
 <script src="./app.js"></script>
 </body>
 </html>

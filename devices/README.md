@@ -53,6 +53,16 @@ Field notes:
   Finder's manual-factory path. Keys are version-range expressions matched
   by `make-index.sh`; values are one of `direct`, `direct-legacy-name`,
   `manual-factory`.
+- `fingerprints.wifi_paths` — the `option path` values OpenWrt writes into
+  `/etc/config/wireless` for this board, one per radio (a second PHY on the
+  same node gets a `+1` suffix). Used by the Finder's backup-tarball
+  identifier (RFC #62 Rung 2): a config backup contains no `board_name`, so
+  these paths are the strongest board signal it carries. They come from the
+  device tree, so boards sharing a SoC family can share values (all ath79
+  boards report `platform/ahb/18100000.wmac`) — the identifier therefore
+  ranks candidates rather than claiming a unique match. Verify against a
+  real device's `/etc/config/wireless` where possible; DTS node addresses in
+  `target/linux/<target>/dts/` are the source otherwise.
 
 Every field except `board_name`, `display_name`, `target`, `arch` is
 optional — a new board can be added with minimal data and filled in as it's
