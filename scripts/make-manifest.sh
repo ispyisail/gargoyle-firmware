@@ -75,8 +75,10 @@ result=$(jq -n -S \
 	--arg generated "$generated" \
 '
 # Identical filename grammar to make-index.sh -- one convention, two joiners.
+# combined (x86-style) parses but is NOT offered OTA: the manifest filter
+# below stays sysupgrade-only, and x86 boards have no devices/*.json entry.
 def parse_filename:
-	capture("^openwrt-(?<target>[a-z0-9]+)-(?<subtarget>[a-z0-9]+)-(?<board>.+)-squashfs-(?<imgtype>sysupgrade|factory(-[a-z]+)?)\\.(?<ext>bin|img|itb)$")?;
+	capture("^openwrt-(?<target>[a-z0-9]+)-(?<subtarget>[a-z0-9]+)-(?<board>.+)-squashfs-(?<imgtype>sysupgrade|factory(-[a-z]+)?|combined(-[a-z]+)?)\\.(?<ext>bin|img|itb|img\\.gz)$")?;
 
 ($assets
 	| map(. + {parsed: (.filename | parse_filename)})

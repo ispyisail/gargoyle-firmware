@@ -116,48 +116,87 @@ jobs:
 
           # Key goes into the container only for this step's duration, into a
           # path outside anything the build ever packages or publishes.
-          docker exec gargoyle-builder mkdir -p /tmp/ota-key
-          docker cp "$key_dir/ota.sec" gargoyle-builder:/tmp/ota-key/ota.sec
-          cleanup_key() { docker exec gargoyle-builder rm -rf /tmp/ota-key; }
+          work=/tmp/ota-key
+          docker exec gargoyle-builder mkdir -p "$work"
+          docker cp "$key_dir/ota.sec" "gargoyle-builder:$work/ota.sec"
+          cleanup_key() { docker exec gargoyle-builder rm -rf "$work"; }
           trap cleanup_key EXIT
 
           for target in $TARGETS; do
             src_dir="/build/gargoyle/${target}-src"
             docker exec gargoyle-builder sh -c "[ -d '$src_dir' ]" || { echo "::warning::no ${target}-src found, skipping"; continue; }
 
+            # Three image families are published; only ONE is signed:
+            #   sysupgrade  -> SIGNED (the only artifact the OTA client ever
+            #                  downloads -- RFC #62 signs exactly this)
+            #   factory     -> unsigned: vendor bootloaders/web-UIs parse
+            #                  their own container formats with internal
+            #                  length fields; appended trailer bytes risk
+            #                  outright rejection, for zero OTA benefit
+            #   combined    -> unsigned: x86-style .img.gz -- appending a
+            #                  trailer corrupts the gzip stream for
+            #                  gunzip-then-dd users (x86 names its
+            #                  sysupgrade-equivalent image "combined",
+            #                  which is why the previous pattern collected
+            #                  NOTHING for an x86 build)
+            # Integrity for the unsigned families comes from the sha256
+            # sidecars + the signed OTA manifest (which lists sha256s).
             images=$(docker exec gargoyle-builder sh -c \
-              "find $src_dir/bin/targets -type f \\( -name '*-squashfs-sysupgrade.*' -o -name '*-squashfs-factory*' \\)")
+              "find $src_dir/bin/targets -type f \\( -name '*-squashfs-sysupgrade.*' -o -name '*-squashfs-factory*' -o -name '*-squashfs-combined*' \\)")
+
+            [ -n "$images" ] || echo "::warning::no publishable images found under ${target}-src/bin/targets -- naming convention drift?"
 
             printf '%s\n' "$images" | while IFS= read -r img; do
               [ -n "$img" ] || continue
               base=$(basename "$img")
 
-              # Sign in place inside the container (usign/fwtool live at
-              # $src_dir/staging_dir/host/bin/ for whichever target was just
-              # built -- confirmed present there, NOT on a bare runner host).
-              # fwtool appends the signature into the image itself; the
-              # router's own OTA client extracts it the same way
-              # (fwtool -t -s) -- the exact mechanism this repo's own
-              # sign/verify/append round-trip test already confirmed against
-              # a disposable test key.
-              docker exec gargoyle-builder sh -c "
-                set -e
-                tools='$src_dir/staging_dir/host/bin'
-                \"\$tools/usign\" -S -m '$img' -s /tmp/ota-key/ota.sec -x '$img.sig'
-                \"\$tools/fwtool\" -S '$img.sig' '$img'
-                rm -f '$img.sig'
-              "
+              case "$base" in
+              *-squashfs-sysupgrade.*)
+                # Sign a COPY, never the in-tree image: leaves the build
+                # tree pristine so a re-dispatch that skips the rebuild can
+                # never stack a second signature onto an already-signed
+                # image. usign/fwtool live at $src_dir/staging_dir/host/bin
+                # for whichever target was just built (NOT on the bare
+                # runner host). fwtool appends the detached sig into the
+                # copy; the router's OTA client extracts it the same way
+                # (fwtool -t -s) -- the exact round trip this repo already
+                # validated against a real image and a disposable key.
+                docker exec gargoyle-builder sh -c "
+                  set -e
+                  tools='$src_dir/staging_dir/host/bin'
+                  cp '$img' '$work/signing-copy'
+                  \"\$tools/usign\" -S -m '$work/signing-copy' -s '$work/ota.sec' -x '$work/signing-copy.sig'
+                  \"\$tools/fwtool\" -S '$work/signing-copy.sig' '$work/signing-copy'
+                  rm -f '$work/signing-copy.sig'
+                "
+                docker cp "gargoyle-builder:$work/signing-copy" "$out/$base"
+                docker exec gargoyle-builder rm -f "$work/signing-copy"
+                ;;
+              *)
+                docker cp "gargoyle-builder:$img" "$out/$base"
+                ;;
+              esac
 
-              docker cp "gargoyle-builder:$img" "$out/$base"
               # sha256 sidecar for the Finder/manifest's cheap hash lookup
               # (gather-github-assets.sh reads this instead of downloading
-              # the full image just to hash it).
+              # the full image just to hash it). Hashes the PUBLISHED bytes
+              # (signed copy where signing applies), matching what a
+              # downloader will verify.
               sha256sum "$out/$base" | awk '{print $1}' > "$out/$base.sha256"
             done
           done
 
           cleanup_key
           trap - EXIT
+
+          # A build that produced nothing publishable must fail HERE, not
+          # "succeed" and then die at the upload step's empty glob -- that
+          # silent-empty path is exactly how the first x86 validation run
+          # failed.
+          if [ -z "$(ls -A "$out")" ]; then
+            echo "::error::zero assets collected across all targets ($TARGETS) -- refusing to publish an empty release" >&2
+            exit 1
+          fi
 
           echo "collected assets:"
           ls -la "$out"

@@ -56,8 +56,11 @@ def device_index:
 
 # Parse one OpenWrt firmware filename into its parts. Returns null (not an
 # error) on no match, so callers can skip non-firmware assets cleanly.
+# "combined" (x86-style, .img.gz) is a first-class image type: x86 has no
+# sysupgrade-named image at all -- its combined image IS the sysupgrade
+# artifact (a real x86 build produced zero matches under the old grammar).
 def parse_filename:
-	capture("^openwrt-(?<target>[a-z0-9]+)-(?<subtarget>[a-z0-9]+)-(?<board>.+)-squashfs-(?<imgtype>sysupgrade|factory(-[a-z]+)?)\\.(?<ext>bin|img|itb)$")?;
+	capture("^openwrt-(?<target>[a-z0-9]+)-(?<subtarget>[a-z0-9]+)-(?<board>.+)-squashfs-(?<imgtype>sysupgrade|factory(-[a-z]+)?|combined(-[a-z]+)?)\\.(?<ext>bin|img|itb|img\\.gz)$")?;
 
 ($assets
 	| map(. + {parsed: (.filename | parse_filename)})
