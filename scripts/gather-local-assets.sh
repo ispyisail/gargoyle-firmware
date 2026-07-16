@@ -34,9 +34,9 @@ find "$staging" -mindepth 3 -maxdepth 3 -type f | sort | while read -r path; do
 	tag=$(printf '%s\n' "$path" | awk -F/ '{print $(NF-1)}')
 	filename=$(basename "$path")
 
-	# Skip sha256 sidecars -- they're read, not listed, as their own record.
+	# Skip sha256/sig sidecars -- they're read, not listed, as records.
 	case "$filename" in
-		*.sha256) continue ;;
+		*.sha256|*.sig) continue ;;
 	esac
 
 	size=$(wc -c < "$path" | tr -d ' ')
@@ -47,11 +47,18 @@ find "$staging" -mindepth 3 -maxdepth 3 -type f | sort | while read -r path; do
 	fi
 	date=$(date -u -r "$path" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
 	url="$base_url/$tag/$filename"
+	if [ -e "$path.sig" ]; then
+		sig_url="$base_url/$tag/$filename.sig"
+	else
+		sig_url=""
+	fi
 
 	[ "$first" = 1 ] || printf ','
 	first=0
 	jq -n --arg tag "$tag" --arg channel "$channel" --arg filename "$filename" \
 		--arg url "$url" --arg sha256 "$sha256" --arg date "$date" --argjson size "$size" \
-		'{tag: $tag, channel: $channel, filename: $filename, url: $url, sha256: $sha256, size: $size, date: $date}'
+		--arg sig_url "$sig_url" \
+		'{tag: $tag, channel: $channel, filename: $filename, url: $url, sha256: $sha256, size: $size, date: $date,
+		  sig_url: (if $sig_url == "" then null else $sig_url end)}'
 done
 printf ']\n'

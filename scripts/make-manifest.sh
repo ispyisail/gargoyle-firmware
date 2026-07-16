@@ -26,6 +26,10 @@
 #   - image has no sha256 (missing sidecar)    -> skipped, stderr warning
 #     (the on-router verify step is sha256-then-usign; a null sha256 would
 #     turn verification into a no-op)
+#   - image has no detached .sig sidecar       -> skipped, stderr warning
+#     (signatures are DETACHED, not appended: the build already appends
+#     its own ucert block via BUILD_KEY, and stacking a second trailer on
+#     that slot would break stock signature checking when enforced)
 #   - eol: true with final_version set         -> entry pinned to that
 #     version forever, note included verbatim (RFC #62 Tier C); newer
 #     releases for the board are ignored
@@ -111,6 +115,8 @@ def parse_filename:
 			{skip: {board: $dev.board_name, reason: "eol final_version \($dev.final_version) has no matching sysupgrade image in this channel"}}
 		  elif $pick.sha256 == null then
 			{skip: {board: $dev.board_name, reason: "newest image \($pick.filename) has no sha256 sidecar -- refusing to offer unverifiable OTA"}}
+		  elif ($pick.sig_url // null) == null then
+			{skip: {board: $dev.board_name, reason: "newest image \($pick.filename) has no detached .sig -- refusing to offer unverifiable OTA"}}
 		  else
 			{entry: {
 				key: $dev.board_name,
@@ -118,6 +124,7 @@ def parse_filename:
 					version: ($pick.tag | ltrimstr("v")),
 					date: $pick.date,
 					url: $pick.url,
+					sig_url: $pick.sig_url,
 					sha256: $pick.sha256,
 					size: $pick.size,
 					min_ram_kb: $dev.min_ram_kb,

@@ -60,15 +60,21 @@ RFC #62's (signed OTA upgrade) Rung-2 Firmware Finder.
 **Phase 3 — firmware builds:**
 
 - **`.github/workflows/build-release.yml`** — builds real firmware for one
-  or more targets on the self-hosted runner, signs every sysupgrade/factory
-  image with the OTA usign key (appended via `fwtool`, the same mechanism a
-  router verifies), uploads images + `.sha256` sidecars to a GitHub Release
+  or more targets on the self-hosted runner, signs every sysupgrade image
+  with the OTA usign key as a **detached `.sig` sidecar** (never appended:
+  the build already appends its own ucert signature block via `BUILD_KEY`,
+  and stacking a second trailer in that slot would break stock sysupgrade
+  signature checking the day it is enforced — published bytes stay
+  identical to what the build produced), uploads images + `.sig` +
+  `.sha256` sidecars to a GitHub Release
   (created as a draft and published only after every asset is in place, so
   the `release: published` event never fires against an empty release), and
   lets that event cascade into `publish-site.yml` and `sign-manifests.yml`.
 - **`scripts/generate-ota-key.sh`** — one-time keypair generation on the
   build host. The private key never leaves that machine and is never stored
   as a GitHub secret.
+- **`scripts/verify-image.sh`** — verify a downloaded image the way a
+  router would (optional sha256, then `usign -V` against `ota.pub`).
 - **`.github/workflows/runner-smoke-test.yml`** — cheap sanity check that
   the self-hosted runner has the env vars, key, Docker access, and workspace
   `build-release.yml` depends on.
@@ -88,13 +94,18 @@ RFC #62's (signed OTA upgrade) Rung-2 Firmware Finder.
   `site/ota/manifest-<channel>.json` + `.sig` and verify against the
   `ota.pub` baked into their image.
 
+- **`site/identify.js`** — the Finder's backup-tarball device identifier
+  (RFC #62 Rung 2): drag a Gargoyle backup onto the page and it matches the
+  wireless config's radio paths against `devices/*.json` fingerprints,
+  entirely client-side. Returns ranked candidates (radio paths are shared
+  within SoC families), plus a firmware-era estimate that drives the right
+  upgrade-route instruction.
+
 ## Not yet in scope
 
 - The **on-router OTA client** (`ota_upgrade.sh` + UI page) — RFC #62's
   router-side half, which consumes the manifests published here. Lives in
   the main gargoyle repo when it lands.
-- The Finder's **backup-tarball device identifier** (drag a config backup
-  onto the page to identify the board) — planned as the last Phase 4 piece.
 
 ## A portability note for anyone editing these scripts
 

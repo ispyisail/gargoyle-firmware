@@ -36,7 +36,9 @@ gh api "repos/$repo/releases" --paginate --jq '.' \
 	| jq -c '
 		.[] | select(.draft == false) as $r
 		| ($r.assets) as $all
-		| ($all | map(select(.name | endswith(".sha256") | not))) as $imgs
+		# .sha256 and .sig are sidecars OF images, not images: resolved as
+		# fields on their image record, never listed as records themselves.
+		| ($all | map(select((.name | endswith(".sha256") | not) and (.name | endswith(".sig") | not)))) as $imgs
 		| $imgs[] | . as $img
 		| {
 			tag: $r.tag_name,
@@ -46,6 +48,7 @@ gh api "repos/$repo/releases" --paginate --jq '.' \
 			url: $img.browser_download_url,
 			size: $img.size,
 			date: $r.published_at,
+			sig_url: ( ($all | map(select(.name == ($img.name + ".sig"))) | .[0].browser_download_url) // null ),
 			sidecar_url: ( ($all | map(select(.name == ($img.name + ".sha256"))) | .[0].browser_download_url) // null )
 		}
 	' > "$tmp_records"

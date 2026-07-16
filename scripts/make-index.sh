@@ -105,6 +105,7 @@ def parse_filename:
 						type: .parsed.imgtype,
 						filename: .filename,
 						url: .url,
+						sig_url: (.sig_url // null),
 						sha256: .sha256,
 						size: .size
 					} ]
