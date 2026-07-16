@@ -1,0 +1,40 @@
+name: Self-hosted runner smoke test
+
+# Cheap sanity check for the self-hosted runner build-release.yml depends
+# on: confirms it's reachable, has the gargoyle-builder label, can see
+# Docker, and has the two environment variables build-release.yml requires
+# (GARGOYLE_OTA_KEY_DIR, GARGOYLE_DOCKER_DIR) actually injected into the job
+# -- worth running after any runner/.env change, before trusting it with a
+# real (expensive) firmware build.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  smoke-test:
+    runs-on: [self-hosted, gargoyle-builder]
+    steps:
+      - name: Check required environment variables are present
+        run: |
+          : "${GARGOYLE_OTA_KEY_DIR:?GARGOYLE_OTA_KEY_DIR not set -- check the runner's .env file}"
+          : "${GARGOYLE_DOCKER_DIR:?GARGOYLE_DOCKER_DIR not set -- check the runner's .env file}"
+          echo "GARGOYLE_OTA_KEY_DIR=$GARGOYLE_OTA_KEY_DIR"
+          echo "GARGOYLE_DOCKER_DIR=$GARGOYLE_DOCKER_DIR"
+
+      - name: Check the signing key is readable (not its contents)
+        run: |
+          if [ -f "$GARGOYLE_OTA_KEY_DIR/ota.sec" ] && [ -f "$GARGOYLE_OTA_KEY_DIR/ota.pub" ]; then
+            echo "signing keypair present"
+          else
+            echo "::error::signing keypair missing at $GARGOYLE_OTA_KEY_DIR"
+            exit 1
+          fi
+
+      - name: Check Docker and the gargoyle-builder container are reachable
+        run: |
+          docker version --format '{{.Server.Version}}'
+          docker exec gargoyle-builder sh -c 'echo container reachable'
+
+      - name: Check the gargoyle-docker workspace is where we expect
+        run: |
+          [ -f "$GARGOYLE_DOCKER_DIR/gargoyle-build.sh" ] || { echo "::error::gargoyle-build.sh not found under $GARGOYLE_DOCKER_DIR"; exit 1; }
+          echo "workspace OK"

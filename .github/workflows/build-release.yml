@@ -1,0 +1,170 @@
+name: Build and publish a firmware release
+
+# Phase 3: builds real Gargoyle firmware for one or more targets, signs each
+# image with usign, and publishes everything as a GitHub Release. Publishing
+# the release then cascades automatically into publish-site.yml (triggers on
+# `release: published`), which rebuilds the Finder index and any plugin
+# feeds -- this workflow only needs to worry about build + sign + upload.
+#
+# Runs on a SELF-HOSTED runner only, deliberately: heavy target builds need
+# real CPU/disk/time budgets hosted runners don't offer for free, and -- more
+# importantly -- the usign PRIVATE KEY never leaves the build host (RFC #62's
+# stated policy). It is read from a local file path on the runner
+# ($GARGOYLE_OTA_KEY_DIR/ota.sec), never from a GitHub secret, so a
+# compromised Actions secret store cannot leak it. Generate that key once
+# with scripts/generate-ota-key.sh -- this workflow fails loudly if it's
+# missing rather than silently skipping signing.
+#
+# usign/fwtool do NOT exist on a bare runner host -- verified live, they only
+# exist inside the gargoyle-builder container's own build output
+# (<target>-src/staging_dir/host/bin/), produced as a side effect of
+# building that target. So the signing step below runs INSIDE the container
+# via docker exec (copying the key in with `docker cp` for the duration of
+# that one step, then explicitly deleting it from the container's writable
+# layer afterward) rather than assuming those tools are installed on the
+# runner itself.
+#
+# Every ${{ inputs.* }} value is passed through `env:` and read as a shell
+# variable, never interpolated directly into a run: script body -- avoids
+# the classic GitHub Actions script-injection pattern even though these
+# inputs are workflow_dispatch-only (repo-owner-triggered).
+on:
+  workflow_dispatch:
+    inputs:
+      gargoyle_ref:
+        description: "git ref (branch/tag) of ispyisail/gargoyle to build"
+        required: true
+        default: "main"
+      release_tag:
+        description: "gargoyle-firmware release tag to publish under (e.g. v1.16.0)"
+        required: true
+      channel:
+        description: "stable or testing (only affects the release's own title/notes/prerelease flag; gather-github-assets.sh infers channel from -rc/-beta/-alpha/-testing suffixes on the tag itself)"
+        required: true
+        default: "stable"
+        type: choice
+        options: [stable, testing]
+      targets:
+        description: "space-separated make targets to build (e.g. \"mediatek ath79 x86\")"
+        required: true
+        default: "x86"
+
+concurrency:
+  group: build-release
+  cancel-in-progress: false
+
+jobs:
+  build-sign-publish:
+    runs-on: [self-hosted, gargoyle-builder]
+    permissions:
+      contents: write
+    env:
+      GARGOYLE_REF: ${{ inputs.gargoyle_ref }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      CHANNEL: ${{ inputs.channel }}
+      TARGETS: ${{ inputs.targets }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify the signing key exists on this runner
+        run: |
+          key_dir="${GARGOYLE_OTA_KEY_DIR:?GARGOYLE_OTA_KEY_DIR not set in this runner's environment}"
+          if [ ! -f "$key_dir/ota.sec" ]; then
+            echo "::error::$key_dir/ota.sec not found. Run scripts/generate-ota-key.sh once on this runner before using this workflow -- refusing to publish unsigned images." >&2
+            exit 1
+          fi
+          echo "signing key present at $key_dir/ota.sec"
+
+      - name: Check out the requested gargoyle ref inside the build container
+        run: |
+          set -e
+          cd "${GARGOYLE_DOCKER_DIR:?GARGOYLE_DOCKER_DIR not set in this runner's environment}"
+          # gargoyle-build.sh's own `shell` subcommand is interactive-only (no
+          # -c, no argument passthrough at all -- verified by reading it, not
+          # assumed) so it can't be scripted. Its `make`/`sync` subcommands
+          # reach the container via `docker compose exec -u builder
+          # gargoyle-build ...` directly; this step does the same rather than
+          # inventing an interface gargoyle-build.sh doesn't have.
+          docker compose exec -u builder gargoyle-build sh -c \
+            'cd /build/gargoyle && git fetch origin "$1" && git checkout "$1"' \
+            _ "$GARGOYLE_REF"
+
+      - name: Build each target
+        run: |
+          set -e
+          cd "${GARGOYLE_DOCKER_DIR:?GARGOYLE_DOCKER_DIR not set in this runner's environment}"
+          for target in $TARGETS; do
+            echo "::group::Building $target"
+            ./gargoyle-build.sh make "$target" FULL_BUILD=true
+            echo "::endgroup::"
+          done
+
+      - name: Sign every built image inside the container, then collect it
+        run: |
+          set -e
+          key_dir="$GARGOYLE_OTA_KEY_DIR"
+          out="release-assets"
+          rm -rf "$out"
+          mkdir -p "$out"
+
+          # Key goes into the container only for this step's duration, into a
+          # path outside anything the build ever packages or publishes.
+          docker exec gargoyle-builder mkdir -p /tmp/ota-key
+          docker cp "$key_dir/ota.sec" gargoyle-builder:/tmp/ota-key/ota.sec
+          cleanup_key() { docker exec gargoyle-builder rm -rf /tmp/ota-key; }
+          trap cleanup_key EXIT
+
+          for target in $TARGETS; do
+            src_dir="/build/gargoyle/${target}-src"
+            docker exec gargoyle-builder sh -c "[ -d '$src_dir' ]" || { echo "::warning::no ${target}-src found, skipping"; continue; }
+
+            images=$(docker exec gargoyle-builder sh -c \
+              "find $src_dir/bin/targets -type f \\( -name '*-squashfs-sysupgrade.*' -o -name '*-squashfs-factory*' \\)")
+
+            printf '%s\n' "$images" | while IFS= read -r img; do
+              [ -n "$img" ] || continue
+              base=$(basename "$img")
+
+              # Sign in place inside the container (usign/fwtool live at
+              # $src_dir/staging_dir/host/bin/ for whichever target was just
+              # built -- confirmed present there, NOT on a bare runner host).
+              # fwtool appends the signature into the image itself; the
+              # router's own OTA client extracts it the same way
+              # (fwtool -t -s) -- the exact mechanism this repo's own
+              # sign/verify/append round-trip test already confirmed against
+              # a disposable test key.
+              docker exec gargoyle-builder sh -c "
+                set -e
+                tools='$src_dir/staging_dir/host/bin'
+                \"\$tools/usign\" -S -m '$img' -s /tmp/ota-key/ota.sec -x '$img.sig'
+                \"\$tools/fwtool\" -S '$img.sig' '$img'
+                rm -f '$img.sig'
+              "
+
+              docker cp "gargoyle-builder:$img" "$out/$base"
+              # sha256 sidecar for the Finder/manifest's cheap hash lookup
+              # (gather-github-assets.sh reads this instead of downloading
+              # the full image just to hash it).
+              sha256sum "$out/$base" | awk '{print $1}' > "$out/$base.sha256"
+            done
+          done
+
+          cleanup_key
+          trap - EXIT
+
+          echo "collected assets:"
+          ls -la "$out"
+
+      - name: Create or update the release and upload assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          extra_flag=""
+          [ "$CHANNEL" = "testing" ] && extra_flag="--prerelease"
+          gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" --repo "${{ github.repository }}" \
+              --title "$RELEASE_TAG" \
+              --notes "Gargoyle firmware built from ispyisail/gargoyle@${GARGOYLE_REF} (channel: ${CHANNEL})" \
+              $extra_flag
+          gh release upload "$RELEASE_TAG" release-assets/* --repo "${{ github.repository }}" --clobber
