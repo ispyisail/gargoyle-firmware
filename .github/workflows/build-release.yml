@@ -68,7 +68,7 @@ jobs:
 
       - name: Verify the signing key exists on this runner
         run: |
-          key_dir="${GARGOYLE_OTA_KEY_DIR:?GARGOYLE_OTA_KEY_DIR not set in this runner's environment}"
+          key_dir="${GARGOYLE_OTA_KEY_DIR:?GARGOYLE_OTA_KEY_DIR not set on this runner}"
           if [ ! -f "$key_dir/ota.sec" ]; then
             echo "::error::$key_dir/ota.sec not found. Run scripts/generate-ota-key.sh once on this runner before using this workflow -- refusing to publish unsigned images." >&2
             exit 1
@@ -78,7 +78,7 @@ jobs:
       - name: Check out the requested gargoyle ref inside the build container
         run: |
           set -e
-          cd "${GARGOYLE_DOCKER_DIR:?GARGOYLE_DOCKER_DIR not set in this runner's environment}"
+          cd "${GARGOYLE_DOCKER_DIR:?GARGOYLE_DOCKER_DIR not set on this runner}"
           # gargoyle-build.sh's own `shell` subcommand is interactive-only (no
           # -c, no argument passthrough at all -- verified by reading it, not
           # assumed) so it can't be scripted. Its `make`/`sync` subcommands
@@ -92,7 +92,7 @@ jobs:
       - name: Build each target
         run: |
           set -e
-          cd "${GARGOYLE_DOCKER_DIR:?GARGOYLE_DOCKER_DIR not set in this runner's environment}"
+          cd "${GARGOYLE_DOCKER_DIR:?GARGOYLE_DOCKER_DIR not set on this runner}"
           for target in $TARGETS; do
             echo "::group::Building $target"
             ./gargoyle-build.sh make "$target" FULL_BUILD=true

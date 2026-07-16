@@ -15,8 +15,8 @@ jobs:
     steps:
       - name: Check required environment variables are present
         run: |
-          : "${GARGOYLE_OTA_KEY_DIR:?GARGOYLE_OTA_KEY_DIR not set -- check the runner's .env file}"
-          : "${GARGOYLE_DOCKER_DIR:?GARGOYLE_DOCKER_DIR not set -- check the runner's .env file}"
+          : "${GARGOYLE_OTA_KEY_DIR:?GARGOYLE_OTA_KEY_DIR not set -- check the runner env file}"
+          : "${GARGOYLE_DOCKER_DIR:?GARGOYLE_DOCKER_DIR not set -- check the runner env file}"
           echo "GARGOYLE_OTA_KEY_DIR=$GARGOYLE_OTA_KEY_DIR"
           echo "GARGOYLE_DOCKER_DIR=$GARGOYLE_DOCKER_DIR"
 
