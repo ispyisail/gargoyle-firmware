@@ -52,12 +52,20 @@ gh api "repos/$repo/releases" --paginate --jq '.' \
 
 # Resolve each record's sha256 by curling its sidecar (tiny file, ~64 bytes)
 # rather than downloading the image itself.
+#
+# printf, NOT echo, for every JSON-carrying variable below: /bin/sh here is
+# dash, whose builtin echo interprets backslash escapes by default (unlike
+# bash's). A JSON string containing an escaped "\n"/"\t"/"\\" would be
+# silently corrupted into a raw control character by "echo", which a
+# downstream jq call then rejects as invalid JSON -- confirmed live via
+# make-feed.sh's control-file parsing. printf '%s\n' never interprets its
+# argument, so it's the only safe way to pass such a value through a pipe.
 first=1
 printf '['
 while IFS= read -r rec; do
-	sidecar_url=$(echo "$rec" | jq -r '.sidecar_url')
-	filename=$(echo "$rec" | jq -r '.filename')
-	tag=$(echo "$rec" | jq -r '.tag')
+	sidecar_url=$(printf '%s\n' "$rec" | jq -r '.sidecar_url')
+	filename=$(printf '%s\n' "$rec" | jq -r '.filename')
+	tag=$(printf '%s\n' "$rec" | jq -r '.tag')
 	if [ "$sidecar_url" != "null" ]; then
 		sha256=$(curl -fsSL "$sidecar_url" 2>/dev/null | awk '{print $1}')
 	else
@@ -66,7 +74,7 @@ while IFS= read -r rec; do
 	fi
 	[ "$first" = 1 ] || printf ','
 	first=0
-	echo "$rec" | jq --arg sha256 "$sha256" \
+	printf '%s\n' "$rec" | jq --arg sha256 "$sha256" \
 		'del(.sidecar_url) + {sha256: (if $sha256 == "" then null else $sha256 end)}'
 done < "$tmp_records"
 printf ']\n'

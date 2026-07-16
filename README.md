@@ -8,7 +8,9 @@ Full project scope: [RFC discussion #99](https://github.com/ispyisail/gargoyle/d
 and `docs/firmware-hosting-plan.md` in `gargoyle-tools`. This RFC is also
 RFC #62's (signed OTA upgrade) Rung-2 Firmware Finder.
 
-## What's here (Phase 1)
+## What's here
+
+**Phase 1 — Firmware Finder:**
 
 - **`site/`** — the Finder itself. Static HTML/CSS/vanilla JS, no build
   step, no external dependencies. Fetches `index.json` (generated, not
@@ -32,15 +34,48 @@ RFC #62's (signed OTA upgrade) Rung-2 Firmware Finder.
   deploys `site/` to Pages whenever a release is published, `devices/`
   metadata changes, or on manual dispatch.
 
+**Phase 2 — plugin feed:**
+
+- **`scripts/make-feed.sh`** — builds an opkg `Packages`/`Packages.gz` feed
+  index for each `plugins-<major>-<arch>` release. Downloads every `.ipk` in
+  that release directly (plugins are small enough that this is cheap and
+  gives real control-file fields — Depends, Provides, Description — rather
+  than guessing from the filename) and hashes/sizes the actual bytes.
+  **Important, verified against opkg's own source**
+  (`libopkg/opkg_download.c`): opkg resolves *both* the package list and
+  every package's `Filename:` by concatenating them onto the same `src/gz
+  <name> <url>` base — there is no absolute-URL case. The generated
+  `Packages`/`Packages.gz` must therefore be uploaded into the **same
+  release** as the `.ipk`s it describes, not hosted on Pages; the firmware's
+  default `src/gz gargoyle_core <url>` line points directly at that
+  release's own download base.
+- **`scripts/parse-control.awk`** — parses a real Debian/opkg control file
+  (an `.ipk` is a plain gzipped tar containing `./debian-binary`,
+  `./data.tar.gz`, `./control.tar.gz` — confirmed against real Gargoyle
+  builds, not assumed from the `.deb`/`ar` format) into key/value records,
+  correctly handling multi-line values like `Description` (verified
+  byte-for-byte against a real OpenWrt-generated `Packages` index, including
+  its exact whitespace conventions).
+
 ## Not yet in scope
 
-- **Plugin feeds** (Phase 2) — per-arch `Packages.gz` indexes, and the
-  firmware-side change to point `opkg.conf`'s default source at them.
 - **Firmware builds** (Phase 3) — `build-release.yml`, matrix builds,
   self-hosted runner for heavy targets, image signing.
 - **OTA manifest generation** (Phase 4) — `scripts/make-manifest.sh`
   producing RFC #62's signed `manifest-{stable,testing}.json` from this same
   `devices/` data (floors, EOL, `history`, `upgradable_from`).
+
+## A portability note for anyone editing these scripts
+
+Every script here targets `/bin/sh`, and on the runners and containers this
+project actually runs on, `/bin/sh` is **dash** — whose builtin `echo`
+interprets backslash escapes by default (unlike bash's). Piping a variable
+that might contain a literal backslash sequence through `echo "$var" | ...`
+can silently corrupt it (a real, previously-shipped bug: an escaped `\n`
+inside a JSON-serialized string was turned into an actual newline byte,
+breaking the next `jq` stage). Always use `printf '%s\n' "$var"` instead of
+`echo "$var"` when the value came from anywhere other than a string literal
+you wrote yourself.
 
 ## Local testing
 

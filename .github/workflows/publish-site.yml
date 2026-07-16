@@ -1,10 +1,11 @@
 name: Publish Firmware Finder
 
-# Phase 1 scope: regenerate index.json from whatever releases already exist
-# and deploy the Finder (site/) to GitHub Pages. No firmware builds happen
-# here yet -- that's Phase 3 (build-release.yml). Runs whenever a release is
-# published, whenever devices/ metadata changes (a board's floors/EOL/aliases
-# can change without a new firmware release), or on demand.
+# Regenerates index.json + the Finder site (Phase 1) and rebuilds every
+# plugin feed (Phase 2) from whatever releases already exist. No firmware
+# builds happen here -- that's Phase 3 (build-release.yml). Runs whenever a
+# release is published, whenever devices/ metadata changes (a board's
+# floors/EOL/aliases can change without a new firmware release), or on
+# demand.
 on:
   release:
     types: [published]
@@ -16,11 +17,6 @@ on:
       - "site/**"
   workflow_dispatch: {}
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 concurrency:
   group: pages
   cancel-in-progress: true
@@ -28,6 +24,8 @@ concurrency:
 jobs:
   build-index:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -60,6 +58,9 @@ jobs:
   deploy:
     needs: build-index
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -67,3 +68,35 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  build-feed:
+    runs-on: ubuntu-latest
+    # Needs write access to upload Packages/Packages.gz back into the same
+    # release the .ipks came from -- verified against opkg's own source
+    # (libopkg/opkg_download.c) that the index and the packages it lists
+    # MUST share one base URL, so there's no Pages-hosted-index option here
+    # the way there is for the Finder's index.json.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Gather release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: sh scripts/gather-github-assets.sh "${{ github.repository }}" > assets.json
+
+      - name: Build plugin feeds
+        run: sh scripts/make-feed.sh assets.json /tmp/feed-dl feed-out
+
+      - name: Upload each feed back into its own release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for tagdir in feed-out/*/; do
+            tag=$(basename "$tagdir")
+            [ -f "$tagdir/Packages.gz" ] || continue
+            echo "uploading feed for $tag"
+            gh release upload "$tag" "$tagdir/Packages" "$tagdir/Packages.gz" \
+              --repo "${{ github.repository }}" --clobber
+          done

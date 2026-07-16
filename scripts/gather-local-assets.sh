@@ -27,8 +27,11 @@ fi
 first=1
 printf '['
 find "$staging" -mindepth 3 -maxdepth 3 -type f | sort | while read -r path; do
-	channel=$(echo "$path" | awk -F/ '{print $(NF-2)}')
-	tag=$(echo "$path" | awk -F/ '{print $(NF-1)}')
+	# printf, not echo: /bin/sh is dash here, whose builtin echo interprets
+	# backslash escapes by default -- a path containing a literal "\n"-like
+	# sequence would be silently mangled. printf '%s\n' never does that.
+	channel=$(printf '%s\n' "$path" | awk -F/ '{print $(NF-2)}')
+	tag=$(printf '%s\n' "$path" | awk -F/ '{print $(NF-1)}')
 	filename=$(basename "$path")
 
 	# Skip sha256 sidecars -- they're read, not listed, as their own record.
