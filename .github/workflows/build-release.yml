@@ -32,9 +32,9 @@ on:
   workflow_dispatch:
     inputs:
       gargoyle_ref:
-        description: "git ref (branch/tag) of ispyisail/gargoyle to build"
+        description: "git ref (branch/tag) of ispyisail/gargoyle to build (its default branch is master, not main -- verified via the GitHub API, not assumed)"
         required: true
-        default: "main"
+        default: "master"
       release_tag:
         description: "gargoyle-firmware release tag to publish under (e.g. v1.16.0)"
         required: true
@@ -85,8 +85,15 @@ jobs:
           # reach the container via `docker compose exec -u builder
           # gargoyle-build ...` directly; this step does the same rather than
           # inventing an interface gargoyle-build.sh doesn't have.
+          #
+          # Fetches directly by URL rather than a named remote: confirmed
+          # live that this container's pre-existing "origin" remote still
+          # points at the old lantis1008/gargoyle fork (pre-migration),
+          # with ispyisail/gargoyle configured under a different remote name
+          # instead. Fetching by URL sidesteps any dependency on how a given
+          # container's remotes happen to be named or ordered.
           docker compose exec -u builder gargoyle-build sh -c \
-            'cd /build/gargoyle && git fetch origin "$1" && git checkout "$1"' \
+            'cd /build/gargoyle && git fetch https://github.com/ispyisail/gargoyle.git "$1" && git checkout FETCH_HEAD' \
             _ "$GARGOYLE_REF"
 
       - name: Build each target
