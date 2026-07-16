@@ -1,0 +1,69 @@
+name: Publish Firmware Finder
+
+# Phase 1 scope: regenerate index.json from whatever releases already exist
+# and deploy the Finder (site/) to GitHub Pages. No firmware builds happen
+# here yet -- that's Phase 3 (build-release.yml). Runs whenever a release is
+# published, whenever devices/ metadata changes (a board's floors/EOL/aliases
+# can change without a new firmware release), or on demand.
+on:
+  release:
+    types: [published]
+  push:
+    branches: [main]
+    paths:
+      - "devices/**"
+      - "scripts/**"
+      - "site/**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Gather release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sh scripts/gather-github-assets.sh "${{ github.repository }}" > assets.json
+          echo "asset records: $(jq 'length' assets.json)"
+
+      - name: Build index.json
+        run: |
+          sh scripts/make-index.sh assets.json devices > site/index.json
+          echo "devices indexed: $(jq '.entries | length' site/index.json)"
+
+      - name: Warn on boards missing devices/ metadata
+        run: |
+          unknown=$(jq -r '.unknown_boards[]' site/index.json)
+          if [ -n "$unknown" ]; then
+            echo "$unknown" | while IFS= read -r board; do
+              echo "::warning::published images exist for board '$board' but devices/$board.json is missing -- it will show in the Finder with no display name, floors, or EOL data"
+            done
+          fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build-index
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

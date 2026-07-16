@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gargoyle Firmware Finder</title>
+<meta name="description" content="Search Gargoyle firmware images and plugins by device model, target, or version.">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<div class="wrap">
+	<header>
+		<h1>Gargoyle Firmware Finder</h1>
+		<p>Search by device model, alias, or target to find the right image. Every image listed here is signed; the sha256 shown must match what you download.</p>
+	</header>
+
+	<div class="search-row">
+		<input id="search" type="text" placeholder="e.g. mt6000, archer c7, ath79…" autocomplete="off" spellcheck="false">
+		<div class="channel-toggle" role="group" aria-label="Release channel">
+			<button data-channel="all" aria-pressed="true">All</button>
+			<button data-channel="stable" aria-pressed="false">Stable</button>
+			<button data-channel="testing" aria-pressed="false">Testing</button>
+		</div>
+	</div>
+	<p id="meta">Loading…</p>
+
+	<div id="results"></div>
+	<p id="empty">No devices match that search.</p>
+
+	<footer>
+		Generated from signed release metadata — see
+		<a href="https://github.com/ispyisail/gargoyle">ispyisail/gargoyle</a>.
+		Don't see your device? It may not have a published image yet, or its
+		metadata hasn't been added — see
+		<a href="https://github.com/ispyisail/gargoyle-firmware/tree/main/devices">devices/</a>.
+	</footer>
+</div>
+<script src="./app.js"></script>
+</body>
+</html>

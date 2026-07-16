@@ -1,0 +1,16 @@
+{
+	"board_name": "tplink_tl-wr841-v9",
+	"display_name": "TP-Link TL-WR841N/ND v9",
+	"aliases": ["tl-wr841n-v9", "wr841n v9", "tl-wr841nd v9"],
+	"target": "ath79/tiny",
+	"arch": "mips_24kc",
+	"min_ram_kb": 32768,
+	"min_flash_kb": 4096,
+	"eol": true,
+	"final_version": "1.12.0",
+	"note": "4/32 device: final supported release. Newer firmware exceeds this hardware's flash/RAM.",
+	"legacy_board_names": [],
+	"upgradable_from": {
+		"*": "manual-factory"
+	}
+}
