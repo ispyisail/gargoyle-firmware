@@ -1,6 +1,20 @@
 {
   "channel": "testing",
-  "devices": {},
-  "generated": "2026-07-16T12:03:45Z",
+  "devices": {
+    "tplink_archer-c7-v2": {
+      "changelog": "https://github.com/ispyisail/gargoyle-firmware/releases/tag/v0.0.0-pipeline-test-rc1",
+      "date": "2026-07-17T04:43:43Z",
+      "eol": false,
+      "min_flash_kb": 16384,
+      "min_ram_kb": 131072,
+      "note": null,
+      "sha256": "b3420741f54b5640efff7b29d62dd8cdb042e759349a6d0031211b4a0260de43",
+      "sig_url": "https://github.com/ispyisail/gargoyle-firmware/releases/download/v0.0.0-pipeline-test-rc1/openwrt-ath79-generic-tplink_archer-c7-v2-squashfs-sysupgrade.bin.sig",
+      "size": 12649271,
+      "url": "https://github.com/ispyisail/gargoyle-firmware/releases/download/v0.0.0-pipeline-test-rc1/openwrt-ath79-generic-tplink_archer-c7-v2-squashfs-sysupgrade.bin",
+      "version": "0.0.0-pipeline-test-rc1"
+    }
+  },
+  "generated": "2026-07-17T04:49:13Z",
   "schema": 1
 }
