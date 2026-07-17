@@ -135,6 +135,7 @@ jobs:
     runs-on: [self-hosted, gargoyle-builder]
     permissions:
       contents: write
+      actions: write
     env:
       GARGOYLE_REF: ${{ inputs.gargoyle_ref }}
       GARGOYLE_SHA: ${{ needs.plan.outputs.gargoyle_sha }}
@@ -266,3 +267,12 @@ jobs:
           gh release upload "$RELEASE_TAG" release-assets/* --repo "${{ github.repository }}" --clobber
           # No-op if the release is already published (re-runs, added targets).
           gh release edit "$RELEASE_TAG" --repo "${{ github.repository }}" --draft=false
+          # Publishing with GITHUB_TOKEN does NOT fire the release:published
+          # workflows -- the same recursion-prevention rule that suppresses
+          # token pushes suppresses token-created release events (verified
+          # live: the first published release triggered neither downstream
+          # workflow). The release: published triggers on those workflows
+          # still serve releases published by a human in the web UI; a
+          # workflow-driven publish must dispatch them explicitly.
+          gh workflow run publish-site.yml --repo "${{ github.repository }}" --ref main
+          gh workflow run sign-manifests.yml --repo "${{ github.repository }}" --ref main
