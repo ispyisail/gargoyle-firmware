@@ -1,33 +1,43 @@
 name: Build and publish a firmware release
 
 # Phase 3: builds real Gargoyle firmware for one or more targets, signs each
-# image with usign, and publishes everything as a GitHub Release. Publishing
-# the release then cascades automatically into publish-site.yml (triggers on
-# `release: published`), which rebuilds the Finder index and any plugin
-# feeds -- this workflow only needs to worry about build + sign + upload.
+# sysupgrade image with a detached usign .sig, and publishes everything as a
+# GitHub Release. Publishing then cascades automatically into
+# publish-site.yml and sign-manifests.yml (both trigger on
+# `release: published`) -- this workflow only worries about build + sign +
+# upload.
+#
+# THREE JOBS, not one -- learned the hard way: GitHub enforces a HARD
+# 6-hour execution limit per JOB, self-hosted runners included ("The job
+# has exceeded the maximum execution time of 6h0m0s" -- a real 4-target run
+# died mid-upload at exactly 6h00m). One target's full build takes 1-2.5h,
+# so per-target matrix jobs stay far under the limit, and the sign+upload
+# job gets its own fresh 6 hours. The single self-hosted runner serializes
+# the matrix jobs anyway; wall time is unchanged, only the per-job ceiling
+# matters.
+#
+# The plan job also pins the requested ref to one COMMIT SHA up front, so
+# serialized matrix jobs hours apart cannot end up building different
+# commits if the branch moves mid-run.
 #
 # Runs on a SELF-HOSTED runner only, deliberately: heavy target builds need
-# real CPU/disk/time budgets hosted runners don't offer for free, and -- more
-# importantly -- the usign PRIVATE KEY never leaves the build host (RFC #62's
-# stated policy). It is read from a local file path on the runner
-# ($GARGOYLE_OTA_KEY_DIR/ota.sec), never from a GitHub secret, so a
+# real CPU/disk/time budgets hosted runners don't offer for free, and --
+# more importantly -- the usign PRIVATE KEY never leaves the build host
+# (RFC #62's stated policy). It is read from a local file path on the
+# runner ($GARGOYLE_OTA_KEY_DIR/ota.sec), never from a GitHub secret, so a
 # compromised Actions secret store cannot leak it. Generate that key once
-# with scripts/generate-ota-key.sh -- this workflow fails loudly if it's
+# with scripts/generate-ota-key.sh -- this workflow fails loudly if it is
 # missing rather than silently skipping signing.
 #
-# usign/fwtool do NOT exist on a bare runner host -- verified live, they only
-# exist inside the gargoyle-builder container's own build output
-# (<target>-src/staging_dir/host/bin/), produced as a side effect of
-# building that target. So the signing step below runs INSIDE the container
-# via docker exec (copying the key in with `docker cp` for the duration of
-# that one step, then explicitly deleting it from the container's writable
-# layer afterward) rather than assuming those tools are installed on the
-# runner itself.
+# usign does NOT exist on a bare runner host -- verified live, it only
+# exists inside the gargoyle-builder container's own build output
+# (<target>-src/staging_dir/host/bin/), so signing runs INSIDE the
+# container via docker exec (key copied in for that step, deleted after).
 #
-# Every ${{ inputs.* }} value is passed through `env:` and read as a shell
-# variable, never interpolated directly into a run: script body -- avoids
-# the classic GitHub Actions script-injection pattern even though these
-# inputs are workflow_dispatch-only (repo-owner-triggered).
+# Every ${{ inputs.* }} / ${{ matrix.* }} value is passed through `env:`
+# and read as a shell variable, never interpolated directly into a run:
+# script body -- avoids the classic GitHub Actions script-injection
+# pattern even though these inputs are workflow_dispatch-only.
 on:
   workflow_dispatch:
     inputs:
@@ -48,18 +58,86 @@ on:
         description: "space-separated make targets to build (e.g. \"mediatek ath79 x86\")"
         required: true
         default: "x86"
+      skip_build:
+        description: "sign and publish whatever the container's build trees already hold, without rebuilding -- recovery path for a run that built fine but died in a later step"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: build-release
   cancel-in-progress: false
 
 jobs:
-  build-sign-publish:
+  plan:
+    runs-on: ubuntu-latest
+    env:
+      GARGOYLE_REF: ${{ inputs.gargoyle_ref }}
+      TARGETS: ${{ inputs.targets }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    outputs:
+      targets_json: ${{ steps.plan.outputs.targets_json }}
+      gargoyle_sha: ${{ steps.plan.outputs.gargoyle_sha }}
+    steps:
+      - name: Resolve the target matrix and pin the gargoyle commit
+        id: plan
+        run: |
+          set -e
+          targets_json=$(printf '%s\n' "$TARGETS" | jq -R -c 'split(" ") | map(select(length > 0))')
+          [ "$targets_json" != "[]" ] || { echo "::error::targets input is empty" >&2; exit 1; }
+          sha=$(gh api "repos/ispyisail/gargoyle/commits/$GARGOYLE_REF" --jq .sha)
+          echo "targets_json=$targets_json" >> "$GITHUB_OUTPUT"
+          echo "gargoyle_sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "building $targets_json from ispyisail/gargoyle@$sha"
+
+  build:
+    needs: plan
+    if: ${{ !inputs.skip_build }}
+    runs-on: [self-hosted, gargoyle-builder]
+    strategy:
+      matrix:
+        target: ${{ fromJSON(needs.plan.outputs.targets_json) }}
+      # One runner serializes these anyway; fail-fast stops queued targets
+      # after a real build failure instead of burning hours on a release
+      # that will not publish.
+      fail-fast: true
+    env:
+      TARGET: ${{ matrix.target }}
+      GARGOYLE_SHA: ${{ needs.plan.outputs.gargoyle_sha }}
+    steps:
+      - name: Check out the pinned gargoyle commit inside the build container
+        run: |
+          set -e
+          cd "${GARGOYLE_DOCKER_DIR:?GARGOYLE_DOCKER_DIR not set on this runner}"
+          # gargoyle-build.sh's own `shell` subcommand is interactive-only
+          # (no -c, no argument passthrough -- verified by reading it), so
+          # this reaches the container the same way its make/sync
+          # subcommands do internally. Fetches by URL, never a named
+          # remote: this container's pre-existing "origin" still points at
+          # the old pre-migration fork. Idempotent across the serialized
+          # matrix jobs -- every target checks out the SAME pinned SHA.
+          docker compose exec -u builder gargoyle-build sh -c \
+            'cd /build/gargoyle && git fetch https://github.com/ispyisail/gargoyle.git "$1" && git checkout FETCH_HEAD' \
+            _ "$GARGOYLE_SHA"
+
+      - name: Build the target
+        run: |
+          set -e
+          cd "${GARGOYLE_DOCKER_DIR:?GARGOYLE_DOCKER_DIR not set on this runner}"
+          ./gargoyle-build.sh make "$TARGET" FULL_BUILD=true
+
+  sign-publish:
+    needs: [plan, build]
+    # skip_build runs leave the build job skipped; anything else requires
+    # every matrix leg green. !cancelled() keeps this from running after a
+    # mid-run cancel.
+    if: ${{ !cancelled() && (needs.build.result == 'success' || (inputs.skip_build && needs.build.result == 'skipped')) }}
     runs-on: [self-hosted, gargoyle-builder]
     permissions:
       contents: write
     env:
       GARGOYLE_REF: ${{ inputs.gargoyle_ref }}
+      GARGOYLE_SHA: ${{ needs.plan.outputs.gargoyle_sha }}
       RELEASE_TAG: ${{ inputs.release_tag }}
       CHANNEL: ${{ inputs.channel }}
       TARGETS: ${{ inputs.targets }}
@@ -74,37 +152,6 @@ jobs:
             exit 1
           fi
           echo "signing key present at $key_dir/ota.sec"
-
-      - name: Check out the requested gargoyle ref inside the build container
-        run: |
-          set -e
-          cd "${GARGOYLE_DOCKER_DIR:?GARGOYLE_DOCKER_DIR not set on this runner}"
-          # gargoyle-build.sh's own `shell` subcommand is interactive-only (no
-          # -c, no argument passthrough at all -- verified by reading it, not
-          # assumed) so it can't be scripted. Its `make`/`sync` subcommands
-          # reach the container via `docker compose exec -u builder
-          # gargoyle-build ...` directly; this step does the same rather than
-          # inventing an interface gargoyle-build.sh doesn't have.
-          #
-          # Fetches directly by URL rather than a named remote: confirmed
-          # live that this container's pre-existing "origin" remote still
-          # points at the old lantis1008/gargoyle fork (pre-migration),
-          # with ispyisail/gargoyle configured under a different remote name
-          # instead. Fetching by URL sidesteps any dependency on how a given
-          # container's remotes happen to be named or ordered.
-          docker compose exec -u builder gargoyle-build sh -c \
-            'cd /build/gargoyle && git fetch https://github.com/ispyisail/gargoyle.git "$1" && git checkout FETCH_HEAD' \
-            _ "$GARGOYLE_REF"
-
-      - name: Build each target
-        run: |
-          set -e
-          cd "${GARGOYLE_DOCKER_DIR:?GARGOYLE_DOCKER_DIR not set on this runner}"
-          for target in $TARGETS; do
-            echo "::group::Building $target"
-            ./gargoyle-build.sh make "$target" FULL_BUILD=true
-            echo "::endgroup::"
-          done
 
       - name: Sign every built image inside the container, then collect it
         run: |
@@ -192,7 +239,8 @@ jobs:
           fi
 
           echo "collected assets:"
-          ls -la "$out"
+          ls -la "$out" | head -20
+          echo "total: $(ls "$out" | wc -l) files"
 
       - name: Create or update the release and upload assets
         env:
@@ -203,15 +251,17 @@ jobs:
           [ "$CHANNEL" = "testing" ] && extra_flag="--prerelease"
           # Draft-first, publish-last: `gh release create` without --draft
           # fires the `release: published` event IMMEDIATELY, before any
-          # asset upload -- publish-site.yml (and sign-manifests.yml) would
+          # asset upload -- publish-site.yml and sign-manifests.yml would
           # index an empty release and nothing re-triggers them once the
           # uploads land. Creating as a draft, uploading, and only then
           # flipping draft off makes the published event fire with every
-          # asset already in place.
+          # asset already in place. (Proved its worth on the first
+          # 4-target run: it died at the 6h job limit mid-upload, and the
+          # draft meant nothing downstream ever saw the partial release.)
           gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1 || \
             gh release create "$RELEASE_TAG" --repo "${{ github.repository }}" \
               --title "$RELEASE_TAG" \
-              --notes "Gargoyle firmware built from ispyisail/gargoyle@${GARGOYLE_REF} (channel: ${CHANNEL})" \
+              --notes "Gargoyle firmware built from ispyisail/gargoyle@${GARGOYLE_SHA} (ref: ${GARGOYLE_REF}, channel: ${CHANNEL})" \
               --draft $extra_flag
           gh release upload "$RELEASE_TAG" release-assets/* --repo "${{ github.repository }}" --clobber
           # No-op if the release is already published (re-runs, added targets).
