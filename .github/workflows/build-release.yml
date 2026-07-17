@@ -276,3 +276,60 @@ jobs:
           # workflow-driven publish must dispatch them explicitly.
           gh workflow run publish-site.yml --repo "${{ github.repository }}" --ref main
           gh workflow run sign-manifests.yml --repo "${{ github.repository }}" --ref main
+
+      - name: Publish the plugin feeds (per-arch, signed)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          # The feed release tag MUST be exactly plugins-<%G>-<arch>, where
+          # %G is the version the firmware bakes into its own `src/gz
+          # gargoyle` line. The zero-guess source of truth is that rendered
+          # line itself: after this run's targets built, the staged rootfs
+          # holds opkg.gpkg.tmp with the substituted tag. major is the
+          # numeric run between "plugins-" and the arch (arch always starts
+          # with a letter, major is digits+dots) -- so reading it back can
+          # never drift from what a router will request.
+          first_target=$(printf '%s' "$TARGETS" | awk '{print $1}')
+          rendered=$(docker exec gargoyle-builder sh -c \
+            "cat \$(find /build/gargoyle/${first_target}-src -path '*/root-*/etc/opkg.gpkg.tmp' 2>/dev/null | head -1) 2>/dev/null" || true)
+          major=$(printf '%s' "$rendered" | grep -oE 'plugins-[0-9][0-9.]*-' | head -1 | sed 's/^plugins-//; s/-$//')
+          if [ -z "$major" ]; then
+            # Fallback: derive from the gargoyle core package version using
+            # the same odd-dev/next-even rule the build's Makefile applies
+            # (1.15.x -> 1.16). Only reached if the rendered tag is absent.
+            corever=$(docker exec gargoyle-builder sh -c \
+              "ls /build/gargoyle/${first_target}-src/bin/packages/*/base/gargoyle_*.ipk 2>/dev/null | head -1" \
+              | sed 's|.*/gargoyle_||; s/_.*//; s/-r[0-9]*$//')
+            major=$(printf '%s' "$corever" | awk -F. '{ if ($2 % 2 == 0) print $1"."$2; else print $1"."($2+1) }')
+            echo "::warning::feed major derived from core package version ($corever -> $major); rendered feed tag not found"
+          fi
+          [ -n "$major" ] || { echo "::error::could not determine plugin feed major version"; exit 1; }
+          echo "plugin feed major: $major"
+
+          # The .ipks live inside the builder container; copy each built
+          # target's package tree out to the runner, then hand the roots to
+          # publish-plugin-feeds.sh. Signing runs back inside the container
+          # (usign lives only there) with the OTA key from the runner.
+          roots=""
+          for target in $TARGETS; do
+            src="/build/gargoyle/${target}-src/bin/packages"
+            docker exec gargoyle-builder sh -c "[ -d '$src' ]" || continue
+            dest="pkgroots/$target"
+            rm -rf "$dest"; mkdir -p "$dest"
+            docker cp "gargoyle-builder:$src/." "$dest/"
+            roots="$roots $dest"
+          done
+          [ -n "$roots" ] || { echo "::warning::no package roots found -- no plugin feeds to publish"; exit 0; }
+
+          usign_path=$(docker exec gargoyle-builder sh -c \
+            'find /build/gargoyle -maxdepth 6 -path "*/staging_dir/host/bin/usign" 2>/dev/null | head -1')
+          [ -n "$usign_path" ] || { echo "::error::no usign in container"; exit 1; }
+
+          CONTAINER=gargoyle-builder \
+          USIGN_IN_CONTAINER="$usign_path" \
+          KEY_SEC="$GARGOYLE_OTA_KEY_DIR/ota.sec" \
+          KEY_PUB="$GARGOYLE_OTA_KEY_DIR/ota.pub" \
+          CHANNEL="$CHANNEL" \
+            sh scripts/publish-plugin-feeds.sh "${{ github.repository }}" "$major" $roots
+          rm -rf pkgroots
