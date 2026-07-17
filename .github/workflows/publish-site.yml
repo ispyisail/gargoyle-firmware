@@ -69,34 +69,10 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-  build-feed:
-    runs-on: ubuntu-latest
-    # Needs write access to upload Packages/Packages.gz back into the same
-    # release the .ipks came from -- verified against opkg's own source
-    # (libopkg/opkg_download.c) that the index and the packages it lists
-    # MUST share one base URL, so there's no Pages-hosted-index option here
-    # the way there is for the Finder's index.json.
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Gather release assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: sh scripts/gather-github-assets.sh "${{ github.repository }}" > assets.json
-
-      - name: Build plugin feeds
-        run: sh scripts/make-feed.sh assets.json /tmp/feed-dl feed-out
-
-      - name: Upload each feed back into its own release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          for tagdir in feed-out/*/; do
-            tag=$(basename "$tagdir")
-            [ -f "$tagdir/Packages.gz" ] || continue
-            echo "uploading feed for $tag"
-            gh release upload "$tag" "$tagdir/Packages" "$tagdir/Packages.gz" \
-              --repo "${{ github.repository }}" --clobber
-          done
+# NOTE: the plugin-feed index job that used to live here (build-feed) was
+# removed. Plugin feeds are now generated AND usign-signed by
+# scripts/publish-plugin-feeds.sh, invoked from build-release.yml on the
+# self-hosted runner (the only place the OTA key lives). Having a second,
+# unsigned generator here re-uploaded Packages after the signed one and
+# orphaned the Packages.sig -- routers then rejected the feed. One writer
+# only: the signed one.
