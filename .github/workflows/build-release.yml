@@ -63,6 +63,11 @@ on:
         required: false
         default: false
         type: boolean
+      full_build:
+        description: "true = FULL_BUILD (wipe+recreate each target-src; needed for an OpenWrt/kernel bump). false = fast rebuild that reuses the existing target-src and only recompiles changed Gargoyle packages -- correct for a gargoyle-package-only change, minutes not hours."
+        required: false
+        default: true
+        type: boolean
 
 concurrency:
   group: build-release
@@ -104,6 +109,7 @@ jobs:
     env:
       TARGET: ${{ matrix.target }}
       GARGOYLE_SHA: ${{ needs.plan.outputs.gargoyle_sha }}
+      FULL_BUILD: ${{ inputs.full_build }}
     steps:
       - name: Check out the pinned gargoyle commit inside the build container
         run: |
@@ -124,7 +130,11 @@ jobs:
         run: |
           set -e
           cd "${GARGOYLE_DOCKER_DIR:?GARGOYLE_DOCKER_DIR not set on this runner}"
-          ./gargoyle-build.sh make "$TARGET" FULL_BUILD=true
+          # FULL_BUILD=true wipes+recreates <target>-src (OpenWrt/kernel
+          # bump); FULL_BUILD=false reuses it and only recompiles changed
+          # Gargoyle packages (fast, correct for a gargoyle-package-only
+          # change). A first build for a target still needs true.
+          ./gargoyle-build.sh make "$TARGET" FULL_BUILD="$FULL_BUILD"
 
   sign-publish:
     needs: [plan, build]
