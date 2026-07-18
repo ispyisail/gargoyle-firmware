@@ -1,6 +1,19 @@
 {
   "channel": "testing",
   "devices": {
+    "glinet_gl-mt6000": {
+      "changelog": "https://github.com/ispyisail/gargoyle-firmware/releases/tag/v2026.07.18-beta4",
+      "date": "2026-07-18T05:20:43Z",
+      "eol": false,
+      "min_flash_kb": 32768,
+      "min_ram_kb": 1009904,
+      "note": null,
+      "sha256": "5d712bd51c39b093d3c172ab1b7fbe98447a1671770067c5b1c8bc8326d4261f",
+      "sig_url": "https://github.com/ispyisail/gargoyle-firmware/releases/download/v2026.07.18-beta4/openwrt-mediatek-filogic-glinet_gl-mt6000-squashfs-sysupgrade.bin.sig",
+      "size": 16825172,
+      "url": "https://github.com/ispyisail/gargoyle-firmware/releases/download/v2026.07.18-beta4/openwrt-mediatek-filogic-glinet_gl-mt6000-squashfs-sysupgrade.bin",
+      "version": "2026.07.18-beta4"
+    },
     "tplink_archer-c7-v2": {
       "changelog": "https://github.com/ispyisail/gargoyle-firmware/releases/tag/v2026.07.18-beta4",
       "date": "2026-07-18T05:20:43Z",
@@ -15,6 +28,6 @@
       "version": "2026.07.18-beta4"
     }
   },
-  "generated": "2026-07-18T05:43:41Z",
+  "generated": "2026-07-18T13:47:00Z",
   "schema": 1
 }
