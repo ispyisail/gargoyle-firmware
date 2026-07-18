@@ -107,6 +107,17 @@ sh "$self_dir/gather-local-assets.sh" "$stageroot" "file://$stageroot/$CHANNEL" 
 feedout="$work/feedout"
 sh "$self_dir/make-feed.sh" "$assets" "$work/dl" "$feedout"
 
+# Fail before publishing anything if the arch feeds built in this run disagree
+# on which gargoyle plugins they carry -- the exact class of bug that let
+# captive portal ship for x86 but not mediatek/ath79/ipq40xx. Only enforced
+# when this run built >1 arch (the check no-ops on a single arch).
+parity_dirs=""
+for arch in $arches; do
+	parity_dirs="$parity_dirs $feedout/plugins-$major-$arch"
+done
+# shellcheck disable=SC2086
+sh "$self_dir/check-feed-parity.sh" $parity_dirs
+
 for arch in $arches; do
 	tag="plugins-$major-$arch"
 	stage="$stageroot/$CHANNEL/$tag"
