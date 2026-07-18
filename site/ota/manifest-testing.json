@@ -2,19 +2,19 @@
   "channel": "testing",
   "devices": {
     "tplink_archer-c7-v2": {
-      "changelog": "https://github.com/ispyisail/gargoyle-firmware/releases/tag/v2026.07.17-beta2",
-      "date": "2026-07-17T14:56:18Z",
+      "changelog": "https://github.com/ispyisail/gargoyle-firmware/releases/tag/v2026.07.18-beta4",
+      "date": "2026-07-18T05:20:43Z",
       "eol": false,
       "min_flash_kb": 16384,
       "min_ram_kb": 131072,
       "note": null,
-      "sha256": "58275a331a204efad700c0dfa8c9acde54da1db83675a0ca22e7ee817bd2b995",
-      "sig_url": "https://github.com/ispyisail/gargoyle-firmware/releases/download/v2026.07.17-beta2/openwrt-ath79-generic-tplink_archer-c7-v2-squashfs-sysupgrade.bin.sig",
+      "sha256": "5c49348ac00e63847e4cd63465435a90b9eb215cc24743d5af5d502afc57834b",
+      "sig_url": "https://github.com/ispyisail/gargoyle-firmware/releases/download/v2026.07.18-beta4/openwrt-ath79-generic-tplink_archer-c7-v2-squashfs-sysupgrade.bin.sig",
       "size": 12649271,
-      "url": "https://github.com/ispyisail/gargoyle-firmware/releases/download/v2026.07.17-beta2/openwrt-ath79-generic-tplink_archer-c7-v2-squashfs-sysupgrade.bin",
-      "version": "2026.07.17-beta2"
+      "url": "https://github.com/ispyisail/gargoyle-firmware/releases/download/v2026.07.18-beta4/openwrt-ath79-generic-tplink_archer-c7-v2-squashfs-sysupgrade.bin",
+      "version": "2026.07.18-beta4"
     }
   },
-  "generated": "2026-07-17T15:04:45Z",
+  "generated": "2026-07-18T05:43:41Z",
   "schema": 1
 }
