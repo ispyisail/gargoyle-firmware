@@ -43,7 +43,7 @@ generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 jq -n \
 	--argjson devices "$devices_json" \
-	--argjson assets "$(cat "$assets")" \
+	--slurpfile assets_wrap "$assets" \
 	--arg generated "$generated" \
 '
 # board_name -> device metadata, plus every legacy_board_names alias pointing
@@ -62,7 +62,11 @@ def device_index:
 def parse_filename:
 	capture("^openwrt-(?<target>[a-z0-9]+)-(?<subtarget>[a-z0-9]+)-(?<board>.+)-squashfs-(?<imgtype>sysupgrade|factory(-[a-z]+)?|combined(-[a-z]+)?)\\.(?<ext>bin|img|itb|img\\.gz)$")?;
 
-($assets
+# --slurpfile reads the assets file (one JSON array) as a stream of values,
+# so $assets_wrap is [ <the array> ]; unwrap the single element. Reading from
+# a file rather than a --argjson command-line arg keeps a large asset set from
+# blowing the jq ARG_MAX.
+($assets_wrap[0]
 	| map(. + {parsed: (.filename | parse_filename)})
 	| map(select(.parsed != null))
 ) as $parsed

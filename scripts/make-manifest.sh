@@ -74,7 +74,7 @@ generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # and the shell prints the skip reasons afterward.
 result=$(jq -n -S \
 	--argjson devices "$devices_json" \
-	--argjson assets "$(cat "$assets")" \
+	--slurpfile assets_wrap "$assets" \
 	--arg channel "$channel" \
 	--arg generated "$generated" \
 '
@@ -84,7 +84,9 @@ result=$(jq -n -S \
 def parse_filename:
 	capture("^openwrt-(?<target>[a-z0-9]+)-(?<subtarget>[a-z0-9]+)-(?<board>.+)-squashfs-(?<imgtype>sysupgrade|factory(-[a-z]+)?|combined(-[a-z]+)?)\\.(?<ext>bin|img|itb|img\\.gz)$")?;
 
-($assets
+# --slurpfile wraps the assets file (one JSON array) as [ <array> ]; unwrap it.
+# Reading from a file rather than a --argjson arg avoids the jq ARG_MAX ceiling.
+($assets_wrap[0]
 	| map(. + {parsed: (.filename | parse_filename)})
 	| map(select(.parsed != null and .parsed.imgtype == "sysupgrade"))
 	| map(select($channel == "testing" or .channel == "stable"))

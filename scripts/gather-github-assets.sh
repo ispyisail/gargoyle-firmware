@@ -34,7 +34,12 @@ trap 'rm -f "$tmp_records"' EXIT
 gh api "repos/$repo/releases" --paginate --jq '.' \
 	| jq -s 'add' \
 	| jq -c '
-		.[] | select(.draft == false) as $r
+		# Firmware releases only. The plugins-<major>-<arch> releases hold
+		# hundreds of .ipks each and are the plugin FEED, not firmware --
+		# make-index (the Finder) and make-manifest (OTA) have no use for
+		# them, and sweeping them in ballooned assets.json to thousands of
+		# records (blew the jq command-line ARG_MAX in make-index).
+		.[] | select(.draft == false and (.tag_name | startswith("plugins-") | not)) as $r
 		| ($r.assets) as $all
 		# .sha256 and .sig are sidecars OF images, not images: resolved as
 		# fields on their image record, never listed as records themselves.
