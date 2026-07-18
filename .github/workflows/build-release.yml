@@ -290,6 +290,19 @@ jobs:
       - name: Publish the plugin feeds (per-arch, signed)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # plugin-gargoyle-captive-portal is genuinely absent for
+          # i386_pentium-mmx (x86's "geode" subtarget -- PC Engines ALIX-
+          # class hardware): captive portal is only bundled via the
+          # vnet-wifi/x64-wifi profiles, and no equivalent wifi-enabled
+          # profile exists for the geode subtarget (only the plain "alix"
+          # profile, which has never carried it). Confirmed pre-existing,
+          # not a regression: the live pre-beta5 feed for this arch also
+          # had zero captive-portal packages. check-feed-parity.sh caught
+          # this correctly on 2026-07-18 -- allow-listed here to unblock
+          # publishing rather than block the release on old/niche
+          # hardware; tracked as follow-up work to wire up an alix-wifi-
+          # style profile so ALIX/geode boards get captive portal too.
+          FEED_PARITY_ALLOW: "plugin-gargoyle-captive-portal"
         run: |
           set -e
           # The feed release tag MUST be exactly plugins-<%G>-<arch>, where
