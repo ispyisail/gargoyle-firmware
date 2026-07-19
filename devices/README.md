@@ -1,8 +1,20 @@
 # devices/ — per-board metadata
 
-One JSON file per board, named `<board_name>.json` (the OpenWrt `board_name`,
-e.g. `ubus call system board | jsonfilter -e '@.board_name'` — same key the
-OTA manifest in RFC #62 uses). This is the single source of truth that
+One JSON file per board. The **filename** is a filesystem-friendly slug
+(same underscore form as the build's `DEVICE_NAME`/image-filename board
+token, e.g. `glinet_gl-mt6000.json`) — it is just a stable identifier for
+this directory and is never read by the scripts. The **`board_name` field
+inside the file** is a different thing and must be the real runtime OpenWrt
+`board_name` (`ubus call system board | jsonfilter -e '@.board_name'` on the
+actual device, or `fwtool -i - image.bin` on the built image) — this is the
+comma-separated `vendor,model` form (e.g. `glinet,gl-mt6000`), and it is the
+exact key `make-manifest.sh` writes into the OTA manifest and the exact
+string a router's OTA client compares against with a plain string-equality
+check (no normalization, no fallback to aliases). Filename slug and
+`board_name` field looking similar is a coincidence of convention, not a
+constraint — getting this field wrong silently breaks OTA for that device
+with no error anywhere, since `not-listed` is also the correct response for
+a genuinely unsupported board. This is the single source of truth that
 `make-index.sh` and `make-manifest.sh` both join against, so marking a device
 EOL or fixing an alias is a one-file PR, not a script edit.
 
@@ -10,7 +22,7 @@ EOL or fixing an alias is a one-file PR, not a script edit.
 
 ```json
 {
-  "board_name": "glinet_gl-mt6000",
+  "board_name": "glinet,gl-mt6000",
   "display_name": "GL.iNet GL-MT6000",
   "aliases": ["mt6000", "gl-mt6000", "gl.inet mt6000"],
   "target": "mediatek/filogic",
@@ -31,8 +43,12 @@ EOL or fixing an alias is a one-file PR, not a script edit.
 
 Field notes:
 
-- `board_name` — canonical OpenWrt board key; must match the value baked
-  into the image (`fwtool -i - image.bin` -> `board_name`).
+- `board_name` — the real runtime OpenWrt board key, comma-separated
+  `vendor,model` form (e.g. `glinet,gl-mt6000`), **not** the underscore
+  build/filename slug (`glinet_gl-mt6000`) — the two look similar but are
+  different values. Verify against a real device (`ubus call system board`)
+  or, failing that, the built image (`fwtool -i - image.bin` ->
+  `supported_devices[0]`) before trusting a guess.
 - `aliases` — free-text search terms a human would type (marketing names,
   common misspellings). Only used by the Finder's search index, never by
   firmware logic.
