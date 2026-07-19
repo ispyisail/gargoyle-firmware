@@ -5,6 +5,12 @@ name: Generate and sign OTA manifests
 # them with the OTA usign key, commits the result under site/ota/, and
 # dispatches publish-site.yml so Pages serves them.
 #
+# Gated by scripts/check-board-names.sh before any of that: verifies every
+# devices/*.json's ota_board_name against the real board_name baked into
+# its own newest built image (fwtool, not a guess). A mismatch fails this
+# job outright -- no manifest is (re)signed or published until it's fixed.
+# Added after exactly this mismatch shipped silently in the first release.
+#
 # Runs on the SELF-HOSTED runner, deliberately: the manifest must be signed
 # with the same private key that signs the images (RFC #62), and that key
 # exists only as a file on the build host -- never as a GitHub secret. That
@@ -62,6 +68,24 @@ jobs:
             exit 1
           fi
 
+      - name: Gather release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          sh scripts/gather-github-assets.sh "${{ github.repository }}" > assets.json
+          echo "asset records: $(jq 'length' assets.json)"
+
+      # Real gate, not advisory: a devices/*.json whose ota_board_name
+      # doesn't match the board_name actually baked into its own newest
+      # image would otherwise publish an OTA manifest entry no router can
+      # ever match -- exactly what shipped, undetected, in the first
+      # release (see check-board-names.sh's own header). Failing this step
+      # stops the manifest from being (re)signed and published at all
+      # until the data is fixed.
+      - name: Verify devices/*.json ota_board_name against real built images
+        run: sh scripts/check-board-names.sh assets.json devices
+
       - name: Generate, sign, and verify both channel manifests
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -69,8 +93,6 @@ jobs:
           set -e
           key_dir="$GARGOYLE_OTA_KEY_DIR"
 
-          sh scripts/gather-github-assets.sh "${{ github.repository }}" > assets.json
-          echo "asset records: $(jq 'length' assets.json)"
           mkdir -p site/ota
 
           # usign only exists inside the builder container, as a build
