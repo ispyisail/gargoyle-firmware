@@ -4,11 +4,16 @@
 # (gather-github-assets.sh / gather-local-assets.sh) against devices/*.json.
 #
 # The manifest is what a router's ota_upgrade.sh fetches to answer "is there
-# an update for me, and where do I get it" -- one entry per board_name (the
-# key `ubus call system board` reports), each pointing at exactly ONE
+# an update for me, and where do I get it" -- one entry per ota_board_name
+# (the key `ubus call system board` reports; NOT the same as board_name,
+# which is the underscore filename slug used to match this device to its
+# own release images -- see devices/README.md), each pointing at exactly ONE
 # sysupgrade image: the newest release that channel offers for that board.
-# Factory images never appear here (OTA applies sysupgrade only; factory
-# flashing is the Finder's manual path).
+# A device with no ota_board_name set is skipped entirely (fail-closed --
+# found live 2026-07-19: publishing under the wrong key silently offers an
+# update no router can ever match, and there is no error anywhere to catch
+# it). Factory images never appear here (OTA applies sysupgrade only;
+# factory flashing is the Finder's manual path).
 #
 # Channel semantics:
 #   stable  -> only releases whose tag has no -rc/-beta/-alpha/-testing
@@ -103,6 +108,8 @@ def parse_filename:
 	         | sort_by(.date) | reverse) as $cand
 	| if ($cand | length) == 0 then
 		empty
+	  elif ($dev.ota_board_name // null) == null then
+		{skip: {board: $dev.board_name, reason: "no ota_board_name set -- refusing to publish an OTA entry with an unverified manifest key"}}
 	  elif ($dev.eol // false) and ($dev.final_version == null) then
 		{skip: {board: $dev.board_name, reason: "eol with no final_version -- nothing may be offered"}}
 	  elif ($dev.min_ram_kb == null) or ($dev.min_flash_kb == null) then
@@ -121,7 +128,7 @@ def parse_filename:
 			{skip: {board: $dev.board_name, reason: "newest image \($pick.filename) has no detached .sig -- refusing to offer unverifiable OTA"}}
 		  else
 			{entry: {
-				key: $dev.board_name,
+				key: $dev.ota_board_name,
 				value: {
 					version: ($pick.tag | ltrimstr("v")),
 					date: $pick.date,

@@ -1,28 +1,43 @@
 # devices/ — per-board metadata
 
-One JSON file per board. The **filename** is a filesystem-friendly slug
-(same underscore form as the build's `DEVICE_NAME`/image-filename board
-token, e.g. `glinet_gl-mt6000.json`) — it is just a stable identifier for
-this directory and is never read by the scripts. The **`board_name` field
-inside the file** is a different thing and must be the real runtime OpenWrt
-`board_name` (`ubus call system board | jsonfilter -e '@.board_name'` on the
-actual device, or `fwtool -i - image.bin` on the built image) — this is the
-comma-separated `vendor,model` form (e.g. `glinet,gl-mt6000`), and it is the
-exact key `make-manifest.sh` writes into the OTA manifest and the exact
-string a router's OTA client compares against with a plain string-equality
-check (no normalization, no fallback to aliases). Filename slug and
-`board_name` field looking similar is a coincidence of convention, not a
-constraint — getting this field wrong silently breaks OTA for that device
-with no error anywhere, since `not-listed` is also the correct response for
-a genuinely unsupported board. This is the single source of truth that
-`make-index.sh` and `make-manifest.sh` both join against, so marking a device
-EOL or fixing an alias is a one-file PR, not a script edit.
+One JSON file per board, named `<board_name>.json`. This is the single
+source of truth that `make-index.sh` and `make-manifest.sh` both join
+against, so marking a device EOL or fixing an alias is a one-file PR, not a
+script edit.
+
+**Two different "board name" concepts live in this file, and they must not
+be confused** (a real bug, found live 2026-07-19: every file had
+`ota_board_name`'s value incorrectly stored in `board_name`, which broke
+`make-manifest.sh`'s and `make-index.sh`'s ability to match this file to
+its own release images at all, since 100% of assets stopped resolving):
+
+- `board_name` — the underscore build/filename slug, e.g. `glinet_gl-mt6000`.
+  This is what `make-index.sh`/`make-manifest.sh` parse out of release image
+  filenames (`openwrt-<target>-<subtarget>-<board_name>-squashfs-...`), so it
+  **must** match that filename token exactly or this device's images will
+  silently match nothing (no error, no skip warning — the join just finds
+  zero candidates).
+- `ota_board_name` — the real runtime OpenWrt board key, comma-separated
+  `vendor,model` form, e.g. `glinet,gl-mt6000` (`ubus call system board` on
+  the device, or `fwtool -i - image.bin` -> `supported_devices[0]` on the
+  built image). This is the exact string `make-manifest.sh` writes as the
+  OTA manifest's device key, and the exact string a router's OTA client
+  compares against with a plain equality check (no normalization, no
+  fallback to `aliases`/`legacy_board_names`). A device with no
+  `ota_board_name` set never gets an OTA manifest entry (fail-closed) but
+  still appears normally in the Finder.
+
+These two values look similar and are easy to conflate, but they come from
+different places (build-system slug vs. runtime DTS-derived identity) and
+serve different joins — never assume one from the other; verify each
+independently before trusting it.
 
 ## Schema
 
 ```json
 {
-  "board_name": "glinet,gl-mt6000",
+  "board_name": "glinet_gl-mt6000",
+  "ota_board_name": "glinet,gl-mt6000",
   "display_name": "GL.iNet GL-MT6000",
   "aliases": ["mt6000", "gl-mt6000", "gl.inet mt6000"],
   "target": "mediatek/filogic",
@@ -43,12 +58,11 @@ EOL or fixing an alias is a one-file PR, not a script edit.
 
 Field notes:
 
-- `board_name` — the real runtime OpenWrt board key, comma-separated
-  `vendor,model` form (e.g. `glinet,gl-mt6000`), **not** the underscore
-  build/filename slug (`glinet_gl-mt6000`) — the two look similar but are
-  different values. Verify against a real device (`ubus call system board`)
-  or, failing that, the built image (`fwtool -i - image.bin` ->
-  `supported_devices[0]`) before trusting a guess.
+- `board_name` — underscore build/filename slug; must match the token in
+  this device's release image filenames exactly (see above).
+- `ota_board_name` — real runtime OpenWrt board key, comma-separated
+  `vendor,model` form (see above). Optional: omit it and the device still
+  works everywhere except OTA (no manifest entry is published for it).
 - `aliases` — free-text search terms a human would type (marketing names,
   common misspellings). Only used by the Finder's search index, never by
   firmware logic.

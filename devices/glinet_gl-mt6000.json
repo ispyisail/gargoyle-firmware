@@ -1,5 +1,6 @@
 {
-	"board_name": "glinet,gl-mt6000",
+	"board_name": "glinet_gl-mt6000",
+	"ota_board_name": "glinet,gl-mt6000",
 	"display_name": "GL.iNet GL-MT6000",
 	"aliases": [
 		"mt6000",

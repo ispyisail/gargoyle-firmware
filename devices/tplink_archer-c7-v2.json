@@ -1,5 +1,6 @@
 {
-	"board_name": "tplink,archer-c7-v2",
+	"board_name": "tplink_archer-c7-v2",
+	"ota_board_name": "tplink,archer-c7-v2",
 	"display_name": "TP-Link Archer C7 v2",
 	"aliases": [
 		"archer c7 v2",
