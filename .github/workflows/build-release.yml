@@ -269,10 +269,50 @@ jobs:
           # asset already in place. (Proved its worth on the first
           # 4-target run: it died at the 6h job limit mid-upload, and the
           # draft meant nothing downstream ever saw the partial release.)
+          # Release notes: the base "built from <sha>" line is the ONLY
+          # thing this workflow has ever written, and every release before
+          # this one is just that stub -- the router's own "see what's new"
+          # link (System > Update) opens this exact page, so a bare
+          # provenance line is indistinguishable from a broken link once a
+          # user actually clicks it. Real content is generated below, best
+          # effort: it must never block a release, so every step that can
+          # fail is guarded and the whole block falls back to the original
+          # one-liner alone if anything goes wrong.
+          #
+          # The base line's exact "ispyisail/gargoyle@<sha>" form is a
+          # parsed CONTRACT, not just documentation: it is how this same
+          # step finds the previous release's commit below, so it must
+          # never be reworded or reformatted.
+          notes_file="$(mktemp)"
+          base_line="Gargoyle firmware built from ispyisail/gargoyle@${GARGOYLE_SHA} (ref: ${GARGOYLE_REF}, channel: ${CHANNEL})"
+          printf '%s\n' "$base_line" > "$notes_file"
+
+          prev_is_prerelease="false"
+          [ "$CHANNEL" = "testing" ] && prev_is_prerelease="true"
+          prev_tag="$(gh release list --repo "${{ github.repository }}" --json tagName,isPrerelease,publishedAt \
+            --jq "[.[] | select(.tagName != \"$RELEASE_TAG\") | select(.isPrerelease == ${prev_is_prerelease})] | sort_by(.publishedAt) | last | .tagName // empty" 2>/dev/null || true)"
+
+          if [ -n "$prev_tag" ]; then
+            prev_body="$(gh release view "$prev_tag" --repo "${{ github.repository }}" --json body --jq .body 2>/dev/null || true)"
+            prev_sha="$(printf '%s' "$prev_body" | grep -oE 'ispyisail/gargoyle@[0-9a-f]+' | head -1 | cut -d@ -f2)"
+            if [ -n "$prev_sha" ] && [ "$prev_sha" != "$GARGOYLE_SHA" ]; then
+              changelog="$(docker exec gargoyle-builder sh -c \
+                "git -C /build/gargoyle log --no-merges --pretty=format:'- %s' '${prev_sha}..${GARGOYLE_SHA}' 2>/dev/null" || true)"
+              if [ -n "$changelog" ]; then
+                {
+                  echo ""
+                  echo "## Changes since $prev_tag"
+                  echo ""
+                  echo "$changelog"
+                } >> "$notes_file"
+              fi
+            fi
+          fi
+
           gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1 || \
             gh release create "$RELEASE_TAG" --repo "${{ github.repository }}" \
               --title "$RELEASE_TAG" \
-              --notes "Gargoyle firmware built from ispyisail/gargoyle@${GARGOYLE_SHA} (ref: ${GARGOYLE_REF}, channel: ${CHANNEL})" \
+              --notes-file "$notes_file" \
               --draft $extra_flag
           gh release upload "$RELEASE_TAG" release-assets/* --repo "${{ github.repository }}" --clobber
           # No-op if the release is already published (re-runs, added targets).
