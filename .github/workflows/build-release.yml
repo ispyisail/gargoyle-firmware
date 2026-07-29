@@ -110,6 +110,7 @@ jobs:
       TARGET: ${{ matrix.target }}
       GARGOYLE_SHA: ${{ needs.plan.outputs.gargoyle_sha }}
       FULL_BUILD: ${{ inputs.full_build }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
       - name: Check out the pinned gargoyle commit inside the build container
         run: |
@@ -130,11 +131,29 @@ jobs:
         run: |
           set -e
           cd "${GARGOYLE_DOCKER_DIR:?GARGOYLE_DOCKER_DIR not set on this runner}"
+          # Surface which beta/rc/alpha/testing build this is in both the
+          # GUI (gargoyle_version.txt, full untruncated string) and the
+          # SSH/console login banner (short_gargoyle_version) -- previously
+          # only the git SHA was visible anywhere, which made it hard to
+          # tell which beta a given box was actually running. Reuses the
+          # same tag-suffix pattern as gather-github-assets.sh's channel
+          # detection, so "what counts as a beta tag" stays defined in one
+          # place conceptually.
+          #
+          # Underscore, not dash: rebuild.sh/build.sh's short_gargoyle_version
+          # truncation (used for the banner) strips at the first character
+          # outside [0-9A-Za-z._-] -- but a bare "-" is, non-obviously, NOT
+          # itself in that surviving set (verified directly against the sed
+          # pattern), so a dash-joined suffix would silently vanish from the
+          # banner while still showing in the GUI. Underscore does survive.
+          suffix=""
+          match="$(printf '%s' "$RELEASE_TAG" | grep -oE -- '-(rc|beta|alpha|testing)[0-9]*$' || true)"
+          [ -n "$match" ] && suffix="_${match#-}"
           # FULL_BUILD=true wipes+recreates <target>-src (OpenWrt/kernel
           # bump); FULL_BUILD=false reuses it and only recompiles changed
           # Gargoyle packages (fast, correct for a gargoyle-package-only
           # change). A first build for a target still needs true.
-          ./gargoyle-build.sh make "$TARGET" FULL_BUILD="$FULL_BUILD"
+          ./gargoyle-build.sh make "$TARGET" FULL_BUILD="$FULL_BUILD" GARGOYLE_VERSION_SUFFIX="$suffix"
 
   sign-publish:
     needs: [plan, build]
