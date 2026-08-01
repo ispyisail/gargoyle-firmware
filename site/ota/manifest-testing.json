@@ -2,32 +2,32 @@
   "channel": "testing",
   "devices": {
     "glinet,gl-mt6000": {
-      "changelog": "https://github.com/ispyisail/gargoyle-firmware/releases/tag/v2026.07.31-beta12",
-      "date": "2026-07-31T15:15:42Z",
+      "changelog": "https://github.com/ispyisail/gargoyle-firmware/releases/tag/v2026.08.01-beta13",
+      "date": "2026-08-01T22:39:16Z",
       "eol": false,
       "min_flash_kb": 32768,
       "min_ram_kb": 1009904,
       "note": null,
-      "sha256": "bef26720e035ae295e8fa6285fd1587e0f946f5553ea31b1acf7e57904118654",
-      "sig_url": "https://github.com/ispyisail/gargoyle-firmware/releases/download/v2026.07.31-beta12/openwrt-mediatek-filogic-glinet_gl-mt6000-squashfs-sysupgrade.bin.sig",
+      "sha256": "aca23f2e1ee200ccda289b6959db0b316fc873d7d83d4476bdaec5a0c8c0bb57",
+      "sig_url": "https://github.com/ispyisail/gargoyle-firmware/releases/download/v2026.08.01-beta13/openwrt-mediatek-filogic-glinet_gl-mt6000-squashfs-sysupgrade.bin.sig",
       "size": 16968532,
-      "url": "https://github.com/ispyisail/gargoyle-firmware/releases/download/v2026.07.31-beta12/openwrt-mediatek-filogic-glinet_gl-mt6000-squashfs-sysupgrade.bin",
-      "version": "2026.07.31-beta12"
+      "url": "https://github.com/ispyisail/gargoyle-firmware/releases/download/v2026.08.01-beta13/openwrt-mediatek-filogic-glinet_gl-mt6000-squashfs-sysupgrade.bin",
+      "version": "2026.08.01-beta13"
     },
     "tplink,archer-c7-v2": {
-      "changelog": "https://github.com/ispyisail/gargoyle-firmware/releases/tag/v2026.07.31-beta12",
-      "date": "2026-07-31T15:15:42Z",
+      "changelog": "https://github.com/ispyisail/gargoyle-firmware/releases/tag/v2026.08.01-beta13",
+      "date": "2026-08-01T22:39:16Z",
       "eol": false,
       "min_flash_kb": 16384,
       "min_ram_kb": 131072,
       "note": null,
-      "sha256": "07c79195868d464e6efcbffc8506358cec00b8b5f7e41268ac897c75c3a2abf4",
-      "sig_url": "https://github.com/ispyisail/gargoyle-firmware/releases/download/v2026.07.31-beta12/openwrt-ath79-generic-tplink_archer-c7-v2-squashfs-sysupgrade.bin.sig",
+      "sha256": "a44ade56b1b608fc15cacb0367f6904aad919777e71883a8e86fe194c7d39eb7",
+      "sig_url": "https://github.com/ispyisail/gargoyle-firmware/releases/download/v2026.08.01-beta13/openwrt-ath79-generic-tplink_archer-c7-v2-squashfs-sysupgrade.bin.sig",
       "size": 12780343,
-      "url": "https://github.com/ispyisail/gargoyle-firmware/releases/download/v2026.07.31-beta12/openwrt-ath79-generic-tplink_archer-c7-v2-squashfs-sysupgrade.bin",
-      "version": "2026.07.31-beta12"
+      "url": "https://github.com/ispyisail/gargoyle-firmware/releases/download/v2026.08.01-beta13/openwrt-ath79-generic-tplink_archer-c7-v2-squashfs-sysupgrade.bin",
+      "version": "2026.08.01-beta13"
     }
   },
-  "generated": "2026-07-31T15:56:49Z",
+  "generated": "2026-08-01T23:22:34Z",
   "schema": 1
 }
